@@ -20,12 +20,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Instalar Gradle 8.2 exacto
-        run: |
-          wget https://services.gradle.org/distributions/gradle-8.2-bin.zip
-          unzip -q gradle-8.2-bin.zip
-          export PATH=$PATH:$(pwd)/gradle-8.2/bin
-          gradle --version
+      - name: Usar Gradle igual que en MonederoSmart
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2'
 
       - name: Compilar APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace

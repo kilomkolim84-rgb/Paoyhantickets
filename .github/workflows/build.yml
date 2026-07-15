@@ -1,0 +1,33 @@
+name: Compilar App Paoyang Tickets
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # ✅ También puedes darle clic manualmente para compilar
+
+jobs:
+  compilar:
+    name: Generar APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Obtener archivos del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Dar permisos al compilador
+        run: chmod +x gradlew
+
+      - name: Compilar la aplicación
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Guardar el APK listo para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paoyang-Tickets-APK
+          path: app/build/outputs/apk/debug/app-debug.apk

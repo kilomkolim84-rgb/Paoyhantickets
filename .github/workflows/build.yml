@@ -3,7 +3,7 @@ name: Compilar App Paoyang Tickets
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:  # ✅ También puedes darle clic manualmente para compilar
+  workflow_dispatch:
 
 jobs:
   compilar:
@@ -20,13 +20,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Dar permisos al compilador
-        run: chmod +x gradlew
+      - name: Descargar y configurar Gradle automáticamente
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2' # ✅ MISMA VERSIÓN QUE TU PROYECTO
+          cache-write-only: false
 
       - name: Compilar la aplicación
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Guardar el APK listo para descargar
+      - name: Guardar el APK listo
         uses: actions/upload-artifact@v4
         with:
           name: Paoyang-Tickets-APK

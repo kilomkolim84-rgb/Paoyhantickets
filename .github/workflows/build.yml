@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Obtener archivos del repositorio
+      - name: Obtener archivos
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -20,15 +20,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Configurar Gradle automático
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.2'
+      - name: Instalar Gradle 8.2 exacto
+        run: |
+          wget https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          export PATH=$PATH:$(pwd)/gradle-8.2/bin
+          gradle --version
 
       - name: Compilar APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Guardar APK listo
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: Paoyang-Tickets-APK

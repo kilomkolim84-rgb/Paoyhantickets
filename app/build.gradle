@@ -7,7 +7,6 @@ plugins {
 android {
     namespace "com.kilomkolim84rgb.paoyang"
     compileSdk 34
-
     defaultConfig {
         applicationId "com.kilomkolim84rgb.paoyang"
         minSdk 24
@@ -15,7 +14,6 @@ android {
         versionCode 1
         versionName "1.0"
     }
-
     buildTypes {
         release {
             minifyEnabled false

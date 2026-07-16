@@ -1,4 +1,5 @@
-package com.kilomkolim84rgb.monedero
+package com.kilomkolim84rgb.paoyangtickets  // ✅ Cambia esta línea
+
 
 import android.Manifest
 import android.app.NotificationChannel

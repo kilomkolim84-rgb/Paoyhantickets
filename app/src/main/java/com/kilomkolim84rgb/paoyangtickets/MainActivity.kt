@@ -9,9 +9,9 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.QrCode  // ✅ CORREGIDO AQUÍ
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -391,7 +391,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         onClick = { ticketConQR = ticket },
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Icon(Icons.Default.QrCode, contentDescription = "Ver QR", tint = Color(0xFF2563EB))
+                                        Icon(Icons.Outlined.QrCode, contentDescription = "Ver QR", tint = Color(0xFF2563EB))
                                     }
                                     IconButton(
                                         onClick = { listaTickets.remove(ticket) },

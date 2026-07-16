@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Visibility  // ✅ Ícono que SÍ existe
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -387,12 +386,14 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     Text(ticket.estado, fontSize = 12.sp)
                                 }
                                 Row {
-                                    IconButton(
+                                    Button(
                                         onClick = { ticketConQR = ticket },
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier.wrapContentSize(),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Default.Visibility, contentDescription = "Ver QR", tint = Color(0xFF2563EB))
+                                        Text("QR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     IconButton(
                                         onClick = { listaTickets.remove(ticket) },
                                         modifier = Modifier.size(40.dp)

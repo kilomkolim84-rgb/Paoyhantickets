@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import io.github.alexzhirkevich.qrose.rememberQrCodePainter
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -249,7 +251,7 @@ fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-// LISTA DE TICKETS — ALMACÉN GLOBAL
+// LISTA DE TICKETS
 val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
@@ -257,17 +259,69 @@ data class Ticket(
     val tiempo: String,
     val valor: String,
     val tipoTiempo: String,
+    val fechaHora: String,
     val estado: String = "✅ Activo"
 )
 
-// 📋 VENTANA TICKETS CREADOS — CON BORRAR
+// 📋 VENTANA TICKETS CREADOS — CON QR Y BORRAR
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }
+    var ticketConQR by remember { mutableStateOf<Ticket?>(null) }
 
     val ticketsFiltrados = remember(textoBuscar, listaTickets.size) {
         if (textoBuscar.isBlank()) listaTickets
         else listaTickets.filter { it.codigo.contains(textoBuscar, ignoreCase = true) }
+    }
+
+    // VENTANA DEL QR
+    if (ticketConQR != null) {
+        Dialog(onDismissRequest = { ticketConQR = null }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(30.dp),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(30.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("📱 CÓDIGO QR", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // QR LEGIBLE — SOLO EL CÓDIGO, IGUAL QUE YAPE/PLIN
+                    val qrTexto = ticketConQR!!.codigo
+                    val painter = rememberQrCodePainter(
+                        data = qrTexto,
+                        size = 250,
+                        border = 2
+                    )
+                    Image(
+                        painter = painter,
+                        contentDescription = "QR Code",
+                        modifier = Modifier
+                            .size(250.dp)
+                            .background(Color.White, RoundedCornerShape(12.dp))
+                            .padding(16.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Código: ${ticketConQR!!.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("${ticketConQR!!.valor} • ${ticketConQR!!.tiempo}", fontSize = 15.sp, color = Color.Gray)
+                    Text("Creado: ${ticketConQR!!.fechaHora}", fontSize = 13.sp, color = Color.Gray)
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = { ticketConQR = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("CERRAR", fontSize = 16.sp)
+                    }
+                }
+            }
+        }
     }
 
     Card(
@@ -277,7 +331,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
-            modifier = Modifier.padding(24.dp).height(450.dp),
+            modifier = Modifier.padding(24.dp).height(480.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("📋 TICKETS CREADOS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -321,10 +375,24 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Código: ${ticket.codigo}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                     Text("${ticket.tiempo} • ${ticket.valor} • ${ticket.tipoTiempo}", fontSize = 12.sp, color = Color.Gray)
+                                    Text("📅 ${ticket.fechaHora}", fontSize = 11.sp, color = Color.Gray)
                                     Text(ticket.estado, fontSize = 12.sp)
                                 }
-                                IconButton(onClick = { listaTickets.remove(ticket) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+                                Row {
+                                    // 📱 BOTÓN QR
+                                    IconButton(
+                                        onClick = { ticketConQR = ticket },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(Icons.Default.QrCode, contentDescription = "Ver QR", tint = Color(0xFF2563EB))
+                                    }
+                                    // 🗑️ BOTÓN BORRAR
+                                    IconButton(
+                                        onClick = { listaTickets.remove(ticket) },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+                                    }
                                 }
                             }
                         }
@@ -340,10 +408,9 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🎫 VENTANA CREAR TICKET — ACTUALIZADA COMPLETA
+// 🎫 VENTANA CREAR TICKET
 @Composable
 fun CrearTicketVentana(onCerrar: () -> Unit) {
-    // ✅ VALORES EXACTOS COMO PEDISTE
     val listaValores = listOf(
         "S/ 0.50", "S/ 1.00", "S/ 2.00", "S/ 3.00", "S/ 4.00", "S/ 5.00",
         "S/ 8.00", "S/ 10.00", "S/ 20.00", "S/ 30.00", "S/ 40.00", "S/ 50.00",
@@ -360,7 +427,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     val listaTipoCodigo = listOf("🔢 Solo Números", "🔤 Letras + Números")
     val listaDigitos = listOf("5 Dígitos", "6 Dígitos")
 
-    // ESTADOS
     var tiempoExpandido by remember { mutableStateOf(false) }
     var valorExpandido by remember { mutableStateOf(false) }
     var cantidadExpandido by remember { mutableStateOf(false) }
@@ -388,7 +454,13 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
         }
     }
 
-    // ANIMACIÓN DE PROGRESO
+    // FECHA Y HORA ACTUAL
+    fun obtenerFechaHora(): String {
+        val ahora = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault())
+        return ahora.format(java.util.Date())
+    }
+
+    // ANIMACIÓN Y GUARDAR
     LaunchedEffect(estadoCreacion) {
         if (estadoCreacion is EstadoCreacion.Creando) {
             val total = cantidadSeleccion.toInt()
@@ -396,14 +468,15 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 (estadoCreacion as? EstadoCreacion.Creando)?.progreso = i.toFloat() / total.toFloat()
                 kotlinx.coroutines.delay(30)
             }
-            // GUARDAR TICKETS EN LA LISTA
+            val fechaHora = obtenerFechaHora()
             repeat(cantidadSeleccion.toInt()) {
                 listaTickets.add(
                     Ticket(
                         codigo = generarCodigo(),
                         tiempo = tiempoSeleccion,
                         valor = valorSeleccion,
-                        tipoTiempo = tipoTiempoSeleccion
+                        tipoTiempo = tipoTiempoSeleccion,
+                        fechaHora = fechaHora
                     )
                 )
             }

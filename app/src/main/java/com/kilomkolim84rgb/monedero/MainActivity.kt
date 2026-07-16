@@ -80,7 +80,7 @@ fun PantallaPrincipal() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
+            .background(androidx.compose.ui.graphics.Color(0xFFF5F5F5))
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -254,7 +254,6 @@ fun BotonPestana(texto: String, color: androidx.compose.ui.graphics.Color, modif
     }
 }
 
-// LISTA DE TICKETS
 val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
@@ -266,7 +265,6 @@ data class Ticket(
     val estado: String = "✅ Activo"
 )
 
-// 📱 FUNCIÓN PARA GENERAR QR LEGIBLE
 fun generarQR(texto: String, tamano: Int = 300): Bitmap {
     val escritor = QRCodeWriter()
     val matriz = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
@@ -281,7 +279,6 @@ fun generarQR(texto: String, tamano: Int = 300): Bitmap {
     return bitmap
 }
 
-// 📋 VENTANA TICKETS CREADOS — CON QR Y BORRAR
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }
@@ -292,7 +289,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
         else listaTickets.filter { it.codigo.contains(textoBuscar, ignoreCase = true) }
     }
 
-    // VENTANA DEL QR
     if (ticketConQR != null) {
         Dialog(onDismissRequest = { ticketConQR = null }) {
             Card(
@@ -308,9 +304,8 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     Text("📱 CÓDIGO QR", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // QR LIMPIO Y LEGIBLE — SOLO EL CÓDIGO
                     val qrBitmap = remember(ticketConQR!!.codigo) { generarQR(ticketConQR!!.codigo, 300) }
-                    Image(
+                    androidx.compose.foundation.Image(
                         bitmap = qrBitmap.asImageBitmap(),
                         contentDescription = "QR Code",
                         modifier = Modifier
@@ -350,7 +345,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
             Text("📋 TICKETS CREADOS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 🔍 BUSCAR
             OutlinedTextField(
                 value = textoBuscar,
                 onValueChange = { textoBuscar = it },
@@ -392,14 +386,12 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     Text(ticket.estado, fontSize = 12.sp)
                                 }
                                 Row {
-                                    // 📱 BOTÓN QR
                                     IconButton(
                                         onClick = { ticketConQR = ticket },
                                         modifier = Modifier.size(40.dp)
                                     ) {
                                         Icon(Icons.Default.QrCode, contentDescription = "Ver QR", tint = androidx.compose.ui.graphics.Color(0xFF2563EB))
                                     }
-                                    // 🗑️ BOTÓN BORRAR
                                     IconButton(
                                         onClick = { listaTickets.remove(ticket) },
                                         modifier = Modifier.size(40.dp)
@@ -421,7 +413,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🎫 VENTANA CREAR TICKET
 @Composable
 fun CrearTicketVentana(onCerrar: () -> Unit) {
     val listaValores = listOf(
@@ -456,7 +447,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
     var estadoCreacion by remember { mutableStateOf<EstadoCreacion>(EstadoCreacion.Idle) }
 
-    // GENERAR CÓDIGO
     fun generarCodigo(): String {
         val cantDigitos = if (digitosSeleccion == "5 Dígitos") 5 else 6
         return if (tipoCodigoSeleccion == "🔢 Solo Números") {
@@ -467,13 +457,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
         }
     }
 
-    // FECHA Y HORA ACTUAL
     fun obtenerFechaHora(): String {
         val ahora = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault())
         return ahora.format(java.util.Date())
     }
 
-    // ANIMACIÓN Y GUARDAR
     LaunchedEffect(estadoCreacion) {
         if (estadoCreacion is EstadoCreacion.Creando) {
             val total = cantidadSeleccion.toInt()
@@ -510,7 +498,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             Text("🎫 CREAR TICKET", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 🔤 TIPO DE CÓDIGO
             Text("Tipo de código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -541,7 +528,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 🔢 DÍGITOS
             Text("Dígitos del código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -572,7 +558,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ⏱️ TIEMPO
             Text("Tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -603,7 +588,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ⏱️ TIPO DE TIEMPO
             Text("Tipo de tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -634,7 +618,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 💰 VALOR
             Text("Valor:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -665,7 +648,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 🔢 CANTIDAD
             Text("Cantidad de tickets:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -696,9 +678,8 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 📊 BARRA DE PROGRESO
             when (estadoCreacion) {
-                is EstadoCreacion.Idle -> { /* Sin mostrar nada */ }
+                is EstadoCreacion.Idle -> { }
                 is EstadoCreacion.Creando -> {
                     val progreso = (estadoCreacion as EstadoCreacion.Creando).progreso
                     Text("🔄 Creando $cantidadSeleccion tickets...", fontSize = 14.sp, color = androidx.compose.ui.graphics.Color.Gray)
@@ -716,7 +697,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            // BOTONES
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -753,7 +733,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     }
 }
 
-// ESTADOS
 sealed class EstadoCreacion {
     object Idle : EstadoCreacion()
     data class Creando(var progreso: Float) : EstadoCreacion()

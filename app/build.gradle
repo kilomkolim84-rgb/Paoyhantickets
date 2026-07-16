@@ -1,15 +1,14 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'com.google.gms.google-services' // ✅ AGREGADO PARA FIREBASE
     id 'com.google.devtools.ksp'
 }
 
 android {
-    namespace 'com.kilomkolim84rgb.paoyang' // ✅ CAMBIADO EL PAQUETE
+    namespace 'com.kilomkolim84rgb.monedero'
     compileSdk 34
     defaultConfig {
-        applicationId "com.kilomkolim84rgb.paoyang" // ✅ CAMBIADO EL ID DE LA APP
+        applicationId "com.kilomkolim84rgb.monedero"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -32,7 +31,7 @@ android {
         compose true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion '1.5.14' // ✅ DEJÉ TU VERSIÓN EXACTA
+        kotlinCompilerExtensionVersion '1.5.14'
     }
 }
 
@@ -45,11 +44,6 @@ dependencies {
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.material3:material3'
-
-    // ✅ AGREGADO FIREBASE IGUAL QUE EN TU MONEDERO
-    implementation platform('com.google.firebase:firebase-bom:32.7.1')
-    implementation 'com.google.firebase:firebase-database-ktx'
-    implementation 'com.google.firebase:firebase-storage-ktx'
     
     def room_version = "2.6.1"
     implementation "androidx.room:room-runtime:$room_version"

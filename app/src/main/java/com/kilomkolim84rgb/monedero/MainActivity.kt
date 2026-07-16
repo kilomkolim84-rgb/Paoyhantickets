@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -103,7 +103,7 @@ fun PantallaPrincipal() {
 
         // 🎫 BOTÓN CREAR TICKET
         Button(
-            onClick = { /* Aquí vamos a crear ticket */ },
+            onClick = { },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(65.dp),
@@ -119,17 +119,15 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 4 BOTONES DE PESTAÑAS
-        Column(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BotonPestana(texto = "✅ Activos", color = Color(0xFF22C55E))
-                BotonPestana(texto = "⏸️ Pausados", color = Color(0xFFF59E0B))
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BotonPestana(texto = "❌ Inactivos", color = Color(0xFFEF4444))
-                BotonPestana(texto = "📋 Historial", color = Color(0xFF6366F1))
-            }
+        // 4 BOTONES DE PESTAÑAS — SIN WEIGHT PROBLEMA
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BotonPestana(texto = "✅ Activos", color = Color(0xFF22C55E), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "⏸️ Pausados", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BotonPestana(texto = "❌ Inactivos", color = Color(0xFFEF4444), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "📋 Historial", color = Color(0xFF6366F1), modifier = Modifier.weight(1f))
         }
     }
 }
@@ -160,13 +158,10 @@ fun TarjetaRouter(nombre: String, modelo: String, ip: String, puerto: String) {
 }
 
 @Composable
-fun BotonPestana(texto: String, color: Color) {
+fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier) {
     Button(
-        onClick = { /* Aquí abrimos cada pantalla */ },
-        modifier = Modifier
-            .height(55.dp)
-            .fillMaxWidth()
-            .weight(1f),
+        onClick = { },
+        modifier = modifier.height(55.dp),
         shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(containerColor = color)
     ) {

@@ -163,7 +163,10 @@ fun TarjetaRouter(nombre: String, modelo: String, ip: String, puerto: String) {
 fun BotonPestana(texto: String, color: Color) {
     Button(
         onClick = { /* Aquí abrimos cada pantalla */ },
-        modifier = Modifier.height(55.dp).weight(1f),
+        modifier = Modifier
+            .height(55.dp)
+            .fillMaxWidth()
+            .weight(1f),
         shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(containerColor = color)
     ) {

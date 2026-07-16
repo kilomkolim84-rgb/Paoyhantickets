@@ -1,4 +1,4 @@
-package com.kilomkolim84rgb.paoyang
+package com.kilomkolim84rgb.monedero
 
 import android.Manifest
 import android.app.NotificationChannel
@@ -35,77 +35,87 @@ import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
 import java.util.*
 
-// ====================== ESTRUCTURA DE TICKETS ======================
 @Entity
-data class Ticket(
+data class Moneda(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val montoSoles: Int,
-    val estado: String = "ACTIVO", // ACTIVO / USADO / VENCIDO
-    val fechaCreacion: Long = System.currentTimeMillis(),
-    val fechaActivacion: Long = 0,
-    val ip: String = "--",
-    val mac: String = "--",
-    val fotoUrl: String = ""
+    val montoCentimos: Int,
+    val fecha: Long = System.currentTimeMillis(),
+    val origen: String = "Manual"
 )
 
 @Dao
-interface TicketDao {
-    @Query("SELECT * FROM Ticket ORDER BY fechaCreacion DESC")
-    suspend fun getAll(): List<Ticket>
+interface MonedaDao {
+    @Query("SELECT * FROM Moneda ORDER BY fecha DESC")
+    suspend fun getAll(): List<Moneda>
     @Insert
-    suspend fun insert(ticket: Ticket)
-    @Query("DELETE FROM Ticket")
+    suspend fun insert(moneda: Moneda)
+    @Query("DELETE FROM Moneda")
     suspend fun deleteAll()
 }
 
-@Database(entities = [Ticket::class], version = 1, exportSchema = false)
-abstract class PaoyangDatabase : RoomDatabase() {
-    abstract fun ticketDao(): TicketDao
+@Database(entities = [Moneda::class], version = 2, exportSchema = false)
+abstract class MonederoDatabase : RoomDatabase() {
+    abstract fun monedaDao(): MonedaDao
     companion object {
-        @Volatile private var INSTANCE: PaoyangDatabase? = null
-        fun getDatabase(context: Context): PaoyangDatabase {
+        @Volatile private var INSTANCE: MonederoDatabase? = null
+        fun getDatabase(context: Context): MonederoDatabase {
             return INSTANCE ?: synchronized(this) {
-                Room.databaseBuilder(context.applicationContext, PaoyangDatabase::class.java, "paoyang_db")
+                Room.databaseBuilder(context.applicationContext, MonederoDatabase::class.java, "monedero_database")
                     .fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
     }
 }
 
-class PaoyangViewModel : ViewModel() {
-    private val _tickets = MutableStateFlow<List<Ticket>>(emptyList())
-    val tickets: StateFlow<List<Ticket>> = _tickets
-    private var db: PaoyangDatabase? = null
+class MonederoViewModel : ViewModel() {
+    private val _monedas = MutableStateFlow<List<Moneda>>(emptyList())
+    val monedas: StateFlow<List<Moneda>> = _monedas
+    private val _totalCentimos = MutableStateFlow(0)
+    val totalCentimos: StateFlow<Int> = _totalCentimos
+    private var db: MonederoDatabase? = null
     
     fun initDatabase(context: Context) {
-        db = PaoyangDatabase.getDatabase(context)
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { cargarTickets() }
+        db = MonederoDatabase.getDatabase(context)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { cargarMonedas() }
     }
 
-    fun crearTicket(montoSoles: Int) {
+    fun insertarMoneda(montoCentimos: Int, origen: String = "Manual") {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            db?.ticketDao()?.insert(Ticket(montoSoles = montoSoles))
-            cargarTickets()
+            db?.monedaDao()?.insert(Moneda(montoCentimos = montoCentimos, origen = origen))
+            cargarMonedas()
         }
     }
 
-    fun borrarTodos() {
+    fun borrarTodo() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            db?.ticketDao()?.deleteAll()
-            cargarTickets()
+            db?.monedaDao()?.deleteAll()
+            cargarMonedas()
         }
     }
     
-    private suspend fun cargarTickets() {
-        _tickets.value = db?.ticketDao()?.getAll() ?: emptyList()
+    private suspend fun cargarMonedas() {
+        val lista = db?.monedaDao()?.getAll() ?: emptyList()
+        _monedas.value = lista
+        _totalCentimos.value = lista.sumOf { it.montoCentimos }
     }
 }
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     
     private lateinit var tts: TextToSpeech
-    private val CHANNEL_ID = "paoyang_channel"
-    private lateinit var viewModel: PaoyangViewModel
+    private val CHANNEL_ID = "monedero_channel"
+    private lateinit var viewModel: MonederoViewModel
+    
+    private val monedaReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val monto = intent?.getIntExtra("MONTO_CENTIMOS", 0) ?: 0
+            if (monto > 0) {
+                viewModel.insertarMoneda(monto, "ESP32")
+                hablarMoneda(monto)
+                mostrarNotificacion(monto)
+            }
+        }
+    }
     
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -115,15 +125,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         createNotificationChannel()
         askNotificationPermission()
         
-        viewModel = PaoyangViewModel()
+        viewModel = MonederoViewModel()
         viewModel.initDatabase(this)
+        
+        registerReceiver(monedaReceiver, IntentFilter("COM.MONEDERO.ADD_MONEDA"), RECEIVER_NOT_EXPORTED)
         
         setContent {
             MaterialTheme {
-                PaoyangScreen(viewModel) { monto ->
-                    viewModel.crearTicket(monto)
-                    hablarTicket(monto)
-                    mostrarNotificacion(monto)
+                MonederoScreen(viewModel) { montoCentimos -> 
+                    viewModel.insertarMoneda(montoCentimos, "Manual")
+                    hablarMoneda(montoCentimos)
+                    mostrarNotificacion(montoCentimos)
                 }
             }
         }
@@ -133,14 +145,18 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (status == TextToSpeech.SUCCESS) tts.language = Locale("es", "PE")
     }
     
-    private fun hablarTicket(monto: Int) {
-        val texto = "Se creó ticket de $monto soles, tiempo guardado"
+    private fun hablarMoneda(montoCentimos: Int) {
+        val texto = when(montoCentimos) {
+            10 -> "diez céntimos"; 20 -> "veinte céntimos"; 50 -> "cincuenta céntimos"
+            100 -> "un sol"; 200 -> "dos soles"; 500 -> "cinco soles"
+            else -> "${montoCentimos / 100.0} soles"
+        }
         tts.speak(texto, TextToSpeech.QUEUE_FLUSH, null, null)
     }
     
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Paoyang Tickets", NotificationManager.IMPORTANCE_HIGH)
+            val channel = NotificationChannel(CHANNEL_ID, "Monedero", NotificationManager.IMPORTANCE_HIGH)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -153,11 +169,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
     
-    private fun mostrarNotificacion(monto: Int) {
+    private fun mostrarNotificacion(montoCentimos: Int) {
+        val montoTexto = "S/ %.2f".format(montoCentimos / 100.0)
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Ticket creado")
-            .setContentText("Ticket de $monto Soles generado correctamente")
+            .setContentTitle("Se agregó una moneda")
+            .setContentText("Ingresó $montoTexto a tu cuenta")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
 
@@ -167,6 +184,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
     
     override fun onDestroy() {
+        unregisterReceiver(monedaReceiver)
         tts.stop()
         tts.shutdown()
         super.onDestroy()
@@ -174,66 +192,60 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 }
 
 @Composable
-fun PaoyangScreen(viewModel: PaoyangViewModel, onCrearTicket: (Int) -> Unit) {
-    val tickets by viewModel.tickets.collectAsState()
-    var montoSeleccionado by remember { mutableStateOf(1) }
+fun MonederoScreen(viewModel: MonederoViewModel, onMonedaAgregada: (Int) -> Unit) {
+    val monedas by viewModel.monedas.collectAsState()
+    val totalCentimos by viewModel.totalCentimos.collectAsState()
+    val totalSoles = totalCentimos / 100.0
     var showDialog by remember { mutableStateOf(false) }
-    val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
 
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text("¿Borrar todos los tickets?") },
-            text = { Text("Se eliminarán todos los registros. No se puede deshacer.") },
+            title = { Text("¿Vaciar monedero?") },
+            text = { Text("Se borrarán todas las monedas. No se puede deshacer.") },
             confirmButton = {
-                Button(onClick = { viewModel.borrarTodos(); showDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar todo") }
+                Button(onClick = { viewModel.borrarTodo(); showDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Borrar") }
             },
             dismissButton = { Button(onClick = { showDialog = false }) { Text("Cancelar") } }
         )
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("PAOYANG TICKETS", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // CREAR TICKET
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Monto del Ticket:", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { if(montoSeleccionado > 1) montoSeleccionado-- }) { Text("-") }
-                    Text("$montoSeleccionado SOLES", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Button(onClick = { if(montoSeleccionado < 30) montoSeleccionado++ }) { Text("+") }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = { onCrearTicket(montoSeleccionado) }, modifier = Modifier.fillMaxWidth()) { Text("GENERAR TICKET", fontSize = 16.sp) }
-                Text("✅ Tiempo guardado: si no se usa no se pierde", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        Text("S/ %.2f".format(totalSoles), fontSize = 48.sp, fontWeight = FontWeight.Bold)
+        Text("Total en monedero", fontSize = 14.sp)
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Text("Prueba Manual:", fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { onMonedaAgregada(10) }) { Text("S/ 0.10") }
+            Button(onClick = { onMonedaAgregada(20) }) { Text("S/ 0.20") }
+            Button(onClick = { onMonedaAgregada(50) }) { Text("S/ 0.50") }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { showDialog = true }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("BORRAR TODOS LOS TICKETS") }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { onMonedaAgregada(100) }) { Text("S/ 1") }
+            Button(onClick = { onMonedaAgregada(200) }) { Text("S/ 2") }
+            Button(onClick = { onMonedaAgregada(500) }) { Text("S/ 5") }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = { showDialog = true }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Vaciar Monedero") }
         Spacer(modifier = Modifier.height(16.dp))
         Divider()
-        Text("Historial - ${tickets.size} tickets", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+        Text("Historial - ${monedas.size} monedas", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
         
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(tickets) { ticket ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${ticket.montoSoles} SOLES", fontWeight = FontWeight.Bold)
-                            Text(ticket.estado, fontWeight = FontWeight.Medium,
-                                color = if(ticket.estado == "ACTIVO") Color(0xFF2E7D32) else Color(0xFFC62828))
-                        }
-                        Text("Creado: ${dateFormat.format(Date(ticket.fechaCreacion))}", fontSize = 12.sp)
-                        if(ticket.estado == "USADO") {
-                            Text("Activado: ${dateFormat.format(Date(ticket.fechaActivacion))}", fontSize = 12.sp)
-                            Text("IP: ${ticket.ip} | MAC: ${ticket.mac}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+            items(monedas) { moneda ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column {
+                        Text("S/ %.2f".format(moneda.montoCentimos / 100.0), fontWeight = FontWeight.Bold)
+                        Text("Origen: ${moneda.origen}", fontSize = 10.sp)
                     }
+                    Text(dateFormat.format(Date(moneda.fecha)), fontSize = 12.sp)
                 }
+                Divider()
             }
         }
     }

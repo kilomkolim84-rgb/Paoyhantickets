@@ -1,5 +1,7 @@
 package com.kilomkolim84rgb.paoyangtickets
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -15,12 +17,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import io.github.alexzhirkevich.qrose.rememberQrCodePainter
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -85,7 +88,7 @@ fun PantallaPrincipal() {
             text = "🎟️ PAOYANG TICKETS",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF2C3E50),
+            color = androidx.compose.ui.graphics.Color(0xFF2C3E50),
             modifier = Modifier.padding(bottom = 20.dp, top = 16.dp)
         )
 
@@ -118,7 +121,7 @@ fun PantallaPrincipal() {
                 .fillMaxWidth()
                 .height(140.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+            colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFE8F5E9))
         ) {
             Column(
                 modifier = Modifier
@@ -130,7 +133,7 @@ fun PantallaPrincipal() {
                     text = "📊 Consumo de Internet — ${datosRouter["nombre"]}",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32)
+                    color = androidx.compose.ui.graphics.Color(0xFF2E7D32)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -138,18 +141,18 @@ fun PantallaPrincipal() {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⬆️ UPLOAD", fontSize = 14.sp, color = Color.Gray)
-                        Text("${datosRouter["upload"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                        Text("⬆️ UPLOAD", fontSize = 14.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                        Text("${datosRouter["upload"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(0xFF1B5E20))
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⬇️ DOWNLOAD", fontSize = 14.sp, color = Color.Gray)
-                        Text("${datosRouter["download"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                        Text("⬇️ DOWNLOAD", fontSize = 14.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                        Text("${datosRouter["download"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(0xFF1B5E20))
                     }
                 }
                 Text(
                     text = "🌡️ Temperatura: ${datosRouter["temp"]}",
                     fontSize = 14.sp,
-                    color = Color.Gray,
+                    color = androidx.compose.ui.graphics.Color.Gray,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
@@ -163,7 +166,7 @@ fun PantallaPrincipal() {
                 .fillMaxWidth()
                 .height(65.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+            colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF2563EB))
         ) {
             Text(
                 text = "🎫 CREAR NUEVO TICKET",
@@ -180,7 +183,7 @@ fun PantallaPrincipal() {
                 .fillMaxWidth()
                 .height(55.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+            colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF6366F1))
         ) {
             Text(
                 text = "📋 TICKETS CREADOS",
@@ -192,13 +195,13 @@ fun PantallaPrincipal() {
         Spacer(modifier = Modifier.height(20.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana(texto = "🟢 Activos", color = Color(0xFF22C55E), modifier = Modifier.weight(1f))
-            BotonPestana(texto = "🟡 Pausados", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "🟢 Activos", color = androidx.compose.ui.graphics.Color(0xFF22C55E), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "🟡 Pausados", color = androidx.compose.ui.graphics.Color(0xFFF59E0B), modifier = Modifier.weight(1f))
         }
         Spacer(modifier = Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana(texto = "🔴 Vencidos", color = Color(0xFFEF4444), modifier = Modifier.weight(1f))
-            BotonPestana(texto = "📋 Historial", color = Color(0xFF6366F1), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "🔴 Vencidos", color = androidx.compose.ui.graphics.Color(0xFFEF4444), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "📋 Historial", color = androidx.compose.ui.graphics.Color(0xFF6366F1), modifier = Modifier.weight(1f))
         }
     }
 }
@@ -219,9 +222,9 @@ fun TarjetaRouter(
             .height(130.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
+            containerColor = if (seleccionado) androidx.compose.ui.graphics.Color(0xFFE3F2FD) else androidx.compose.ui.graphics.Color(0xFFFFFFFF)
         ),
-        border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
+        border = if (seleccionado) BorderStroke(2.dp, androidx.compose.ui.graphics.Color(0xFF2563EB)) else null
     ) {
         Column(
             modifier = Modifier
@@ -231,7 +234,7 @@ fun TarjetaRouter(
             verticalArrangement = Arrangement.Center
         ) {
             Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(modelo, fontSize = 12.sp, color = Color.Gray)
+            Text(modelo, fontSize = 12.sp, color = androidx.compose.ui.graphics.Color.Gray)
             Spacer(modifier = Modifier.height(6.dp))
             Text("IP: $ip", fontSize = 12.sp)
             Text("Puerto: $puerto", fontSize = 12.sp)
@@ -240,7 +243,7 @@ fun TarjetaRouter(
 }
 
 @Composable
-fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier) {
+fun BotonPestana(texto: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
     Button(
         onClick = { },
         modifier = modifier.height(55.dp),
@@ -262,6 +265,21 @@ data class Ticket(
     val fechaHora: String,
     val estado: String = "✅ Activo"
 )
+
+// 📱 FUNCIÓN PARA GENERAR QR LEGIBLE
+fun generarQR(texto: String, tamano: Int = 300): Bitmap {
+    val escritor = QRCodeWriter()
+    val matriz = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
+    val ancho = matriz.width
+    val alto = matriz.height
+    val bitmap = Bitmap.createBitmap(ancho, alto, Bitmap.Config.RGB_565)
+    for (x in 0 until ancho) {
+        for (y in 0 until alto) {
+            bitmap.setPixel(x, y, if (matriz[x, y]) Color.BLACK else Color.WHITE)
+        }
+    }
+    return bitmap
+}
 
 // 📋 VENTANA TICKETS CREADOS — CON QR Y BORRAR
 @Composable
@@ -290,26 +308,21 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     Text("📱 CÓDIGO QR", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // QR LEGIBLE — SOLO EL CÓDIGO, IGUAL QUE YAPE/PLIN
-                    val qrTexto = ticketConQR!!.codigo
-                    val painter = rememberQrCodePainter(
-                        data = qrTexto,
-                        size = 250,
-                        border = 2
-                    )
+                    // QR LIMPIO Y LEGIBLE — SOLO EL CÓDIGO
+                    val qrBitmap = remember(ticketConQR!!.codigo) { generarQR(ticketConQR!!.codigo, 300) }
                     Image(
-                        painter = painter,
+                        bitmap = qrBitmap.asImageBitmap(),
                         contentDescription = "QR Code",
                         modifier = Modifier
-                            .size(250.dp)
-                            .background(Color.White, RoundedCornerShape(12.dp))
-                            .padding(16.dp)
+                            .size(300.dp)
+                            .border(BorderStroke(2.dp, androidx.compose.ui.graphics.Color.LightGray), RoundedCornerShape(8.dp))
+                            .background(androidx.compose.ui.graphics.Color.White, RoundedCornerShape(8.dp))
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Código: ${ticketConQR!!.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("${ticketConQR!!.valor} • ${ticketConQR!!.tiempo}", fontSize = 15.sp, color = Color.Gray)
-                    Text("Creado: ${ticketConQR!!.fechaHora}", fontSize = 13.sp, color = Color.Gray)
+                    Text("${ticketConQR!!.valor} • ${ticketConQR!!.tiempo}", fontSize = 15.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                    Text("Creado: ${ticketConQR!!.fechaHora}", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
 
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
@@ -356,7 +369,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     .verticalScroll(rememberScrollState())
             ) {
                 if (ticketsFiltrados.isEmpty()) {
-                    Text("📭 No hay tickets creados aún", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                    Text("📭 No hay tickets creados aún", color = androidx.compose.ui.graphics.Color.Gray, modifier = Modifier.padding(16.dp))
                 } else {
                     ticketsFiltrados.forEach { ticket ->
                         Card(
@@ -374,8 +387,8 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Código: ${ticket.codigo}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Text("${ticket.tiempo} • ${ticket.valor} • ${ticket.tipoTiempo}", fontSize = 12.sp, color = Color.Gray)
-                                    Text("📅 ${ticket.fechaHora}", fontSize = 11.sp, color = Color.Gray)
+                                    Text("${ticket.tiempo} • ${ticket.valor} • ${ticket.tipoTiempo}", fontSize = 12.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                    Text("📅 ${ticket.fechaHora}", fontSize = 11.sp, color = androidx.compose.ui.graphics.Color.Gray)
                                     Text(ticket.estado, fontSize = 12.sp)
                                 }
                                 Row {
@@ -384,14 +397,14 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         onClick = { ticketConQR = ticket },
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Icon(Icons.Default.QrCode, contentDescription = "Ver QR", tint = Color(0xFF2563EB))
+                                        Icon(Icons.Default.QrCode, contentDescription = "Ver QR", tint = androidx.compose.ui.graphics.Color(0xFF2563EB))
                                     }
                                     // 🗑️ BOTÓN BORRAR
                                     IconButton(
                                         onClick = { listaTickets.remove(ticket) },
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+                                        Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = androidx.compose.ui.graphics.Color(0xFFEF4444))
                                     }
                                 }
                             }
@@ -503,11 +516,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = { tipoCodigoExpandido = !tipoCodigoExpandido },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF3E5F5))
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFF3E5F5))
                 ) {
-                    Text(tipoCodigoSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Text(tipoCodigoSeleccion, color = androidx.compose.ui.graphics.Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = androidx.compose.ui.graphics.Color.Black)
                 }
                 DropdownMenu(
                     expanded = tipoCodigoExpandido,
@@ -534,11 +547,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = { digitosExpandido = !digitosExpandido },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFECEFF1))
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFECEFF1))
                 ) {
-                    Text(digitosSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Text(digitosSeleccion, color = androidx.compose.ui.graphics.Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = androidx.compose.ui.graphics.Color.Black)
                 }
                 DropdownMenu(
                     expanded = digitosExpandido,
@@ -565,11 +578,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = { tiempoExpandido = !tiempoExpandido },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE3F2FD))
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFE3F2FD))
                 ) {
-                    Text(tiempoSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Text(tiempoSeleccion, color = androidx.compose.ui.graphics.Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = androidx.compose.ui.graphics.Color.Black)
                 }
                 DropdownMenu(
                     expanded = tiempoExpandido,
@@ -596,11 +609,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = { tipoTiempoExpandido = !tipoTiempoExpandido },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFE0B2))
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFFE0B2))
                 ) {
-                    Text(tipoTiempoSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Text(tipoTiempoSeleccion, color = androidx.compose.ui.graphics.Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = androidx.compose.ui.graphics.Color.Black)
                 }
                 DropdownMenu(
                     expanded = tipoTiempoExpandido,
@@ -627,11 +640,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = { valorExpandido = !valorExpandido },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE8F5E9))
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFE8F5E9))
                 ) {
-                    Text(valorSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Text(valorSeleccion, color = androidx.compose.ui.graphics.Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = androidx.compose.ui.graphics.Color.Black)
                 }
                 DropdownMenu(
                     expanded = valorExpandido,
@@ -658,11 +671,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = { cantidadExpandido = !cantidadExpandido },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFF3E0))
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFFF3E0))
                 ) {
-                    Text(cantidadSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Text(cantidadSeleccion, color = androidx.compose.ui.graphics.Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = androidx.compose.ui.graphics.Color.Black)
                 }
                 DropdownMenu(
                     expanded = cantidadExpandido,
@@ -688,17 +701,17 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 is EstadoCreacion.Idle -> { /* Sin mostrar nada */ }
                 is EstadoCreacion.Creando -> {
                     val progreso = (estadoCreacion as EstadoCreacion.Creando).progreso
-                    Text("🔄 Creando $cantidadSeleccion tickets...", fontSize = 14.sp, color = Color.Gray)
+                    Text("🔄 Creando $cantidadSeleccion tickets...", fontSize = 14.sp, color = androidx.compose.ui.graphics.Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(
                         progress = { progreso },
                         modifier = Modifier.fillMaxWidth().height(10.dp),
-                        color = Color(0xFF22C55E)
+                        color = androidx.compose.ui.graphics.Color(0xFF22C55E)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 is EstadoCreacion.Terminado -> {
-                    Text("✅ ¡$cantidadSeleccion tickets creados!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
+                    Text("✅ ¡$cantidadSeleccion tickets creados!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(0xFF22C55E))
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
@@ -711,14 +724,14 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 if (estadoCreacion is EstadoCreacion.Idle) {
                     Button(
                         onClick = onCerrar,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFEF4444)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("❌ CANCELAR", fontSize = 13.sp)
                     }
                     Button(
                         onClick = { estadoCreacion = EstadoCreacion.Creando(0f) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF22C55E)),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("✅ CREAR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -729,7 +742,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                             estadoCreacion = EstadoCreacion.Idle
                             onCerrar()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF2563EB)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("✅ ACEPTAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)

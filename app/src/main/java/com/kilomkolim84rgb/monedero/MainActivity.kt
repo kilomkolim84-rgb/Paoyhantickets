@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -248,27 +249,25 @@ fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-// 📋 VENTANA TICKETS CREADOS CON BUSCAR
+// LISTA DE TICKETS — ALMACÉN GLOBAL
+val listaTickets = mutableStateListOf<Ticket>()
+
+data class Ticket(
+    val codigo: String,
+    val tiempo: String,
+    val valor: String,
+    val tipoTiempo: String,
+    val estado: String = "✅ Activo"
+)
+
+// 📋 VENTANA TICKETS CREADOS — CON BORRAR
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }
 
-    val todosTickets = remember {
-        listOf(
-            "TK-6050 • 1 Hora • S/1.00 • ✅ Activo",
-            "TK-6051 • 30 min • S/0.50 • ⏳ Pendiente",
-            "TK-6052 • 2 Horas • S/2.00 • ✅ Activo",
-            "TK-6053 • 1 Hora • S/1.00 • 🔴 Vencido",
-            "TK-6054 • 4 Horas • S/5.00 • ✅ Activo",
-            "TK-1801 • 1 Hora • S/1.00 • ✅ Activo",
-            "TK-1818 • 2 Horas • S/2.00 • 🔴 Vencido",
-            "TK-0018 • 30 min • S/0.50 • ✅ Activo"
-        )
-    }
-
-    val ticketsFiltrados = remember(textoBuscar) {
-        if (textoBuscar.isBlank()) todosTickets
-        else todosTickets.filter { it.contains(textoBuscar, ignoreCase = true) }
+    val ticketsFiltrados = remember(textoBuscar, listaTickets.size) {
+        if (textoBuscar.isBlank()) listaTickets
+        else listaTickets.filter { it.codigo.contains(textoBuscar, ignoreCase = true) }
     }
 
     Card(
@@ -284,7 +283,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
             Text("📋 TICKETS CREADOS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 🔍 BARRA DE BÚSQUEDA
+            // 🔍 BUSCAR
             OutlinedTextField(
                 value = textoBuscar,
                 onValueChange = { textoBuscar = it },
@@ -303,7 +302,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     .verticalScroll(rememberScrollState())
             ) {
                 if (ticketsFiltrados.isEmpty()) {
-                    Text("❌ No se encontraron tickets", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                    Text("📭 No hay tickets creados aún", color = Color.Gray, modifier = Modifier.padding(16.dp))
                 } else {
                     ticketsFiltrados.forEach { ticket ->
                         Card(
@@ -312,11 +311,22 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 .padding(vertical = 4.dp),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text(
-                                text = ticket,
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(12.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Código: ${ticket.codigo}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("${ticket.tiempo} • ${ticket.valor} • ${ticket.tipoTiempo}", fontSize = 12.sp, color = Color.Gray)
+                                    Text(ticket.estado, fontSize = 12.sp)
+                                }
+                                IconButton(onClick = { listaTickets.remove(ticket) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+                                }
+                            }
                         }
                     }
                 }
@@ -330,32 +340,47 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🎫 VENTANA CREAR TICKET ACTUALIZADA
+// 🎫 VENTANA CREAR TICKET — ACTUALIZADA COMPLETA
 @Composable
 fun CrearTicketVentana(onCerrar: () -> Unit) {
-    val listaTiempos = listOf("30 min", "1 Hora", "2 Horas", "4 Horas", "8 Horas")
-    val listaValores = listOf("S/ 1.00", "S/ 2.00", "S/ 3.00", "S/ 5.00", "S/ 10.00", "S/ 20.00", "S/ 50.00")
-    val listaCantidades = listOf("1", "5", "10", "50", "100", "500", "1000")
-    val listaTipoCodigo = listOf("Solo Números", "Letras + Números")
+    // ✅ VALORES EXACTOS COMO PEDISTE
+    val listaValores = listOf(
+        "S/ 0.50", "S/ 1.00", "S/ 2.00", "S/ 3.00", "S/ 4.00", "S/ 5.00",
+        "S/ 8.00", "S/ 10.00", "S/ 20.00", "S/ 30.00", "S/ 40.00", "S/ 50.00",
+        "S/ 60.00", "S/ 70.00", "S/ 80.00", "S/ 90.00", "S/ 100.00"
+    )
+
+    val listaTiempos = listOf(
+        "30 Minutos", "1 Hora", "2 Horas", "3 Horas", "4 Horas", "5 Horas",
+        "8 Horas", "10 Horas", "12 Horas", "1 Día", "7 Días", "15 Días", "30 Días"
+    )
+
+    val listaTipoTiempo = listOf("⏱️ Tiempo Corrido", "⏸️ Tiempo Pausado")
+    val listaCantidades = listOf("1", "2", "3", "5", "10", "20", "50", "100")
+    val listaTipoCodigo = listOf("🔢 Solo Números", "🔤 Letras + Números")
     val listaDigitos = listOf("5 Dígitos", "6 Dígitos")
 
+    // ESTADOS
     var tiempoExpandido by remember { mutableStateOf(false) }
     var valorExpandido by remember { mutableStateOf(false) }
     var cantidadExpandido by remember { mutableStateOf(false) }
     var tipoCodigoExpandido by remember { mutableStateOf(false) }
     var digitosExpandido by remember { mutableStateOf(false) }
+    var tipoTiempoExpandido by remember { mutableStateOf(false) }
 
     var tiempoSeleccion by remember { mutableStateOf("1 Hora") }
     var valorSeleccion by remember { mutableStateOf("S/ 1.00") }
     var cantidadSeleccion by remember { mutableStateOf("1") }
-    var tipoCodigoSeleccion by remember { mutableStateOf("Solo Números") }
+    var tipoCodigoSeleccion by remember { mutableStateOf("🔢 Solo Números") }
     var digitosSeleccion by remember { mutableStateOf("6 Dígitos") }
+    var tipoTiempoSeleccion by remember { mutableStateOf("⏱️ Tiempo Corrido") }
 
     var estadoCreacion by remember { mutableStateOf<EstadoCreacion>(EstadoCreacion.Idle) }
 
+    // GENERAR CÓDIGO
     fun generarCodigo(): String {
         val cantDigitos = if (digitosSeleccion == "5 Dígitos") 5 else 6
-        return if (tipoCodigoSeleccion == "Solo Números") {
+        return if (tipoCodigoSeleccion == "🔢 Solo Números") {
             (1..cantDigitos).joinToString("") { Random.nextInt(0, 10).toString() }
         } else {
             val letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -363,6 +388,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
         }
     }
 
+    // ANIMACIÓN DE PROGRESO
     LaunchedEffect(estadoCreacion) {
         if (estadoCreacion is EstadoCreacion.Creando) {
             val total = cantidadSeleccion.toInt()
@@ -370,7 +396,18 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 (estadoCreacion as? EstadoCreacion.Creando)?.progreso = i.toFloat() / total.toFloat()
                 kotlinx.coroutines.delay(30)
             }
-            estadoCreacion = EstadoCreacion.Terminado(generarCodigo())
+            // GUARDAR TICKETS EN LA LISTA
+            repeat(cantidadSeleccion.toInt()) {
+                listaTickets.add(
+                    Ticket(
+                        codigo = generarCodigo(),
+                        tiempo = tiempoSeleccion,
+                        valor = valorSeleccion,
+                        tipoTiempo = tipoTiempoSeleccion
+                    )
+                )
+            }
+            estadoCreacion = EstadoCreacion.Terminado
         }
     }
 
@@ -385,10 +422,10 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("🎫 CREAR TICKET", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // 🔤 TIPO DE CÓDIGO
-            Text("🔤 Tipo de código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text("Tipo de código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
                     onClick = { tipoCodigoExpandido = !tipoCodigoExpandido },
@@ -416,10 +453,10 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 🔢 CANTIDAD DE DÍGITOS
-            Text("🔢 Dígitos del código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            // 🔢 DÍGITOS
+            Text("Dígitos del código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
                     onClick = { digitosExpandido = !digitosExpandido },
@@ -447,10 +484,10 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // ⏱️ TIEMPO
-            Text("⏱️ Tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text("Tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
                     onClick = { tiempoExpandido = !tiempoExpandido },
@@ -478,10 +515,41 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // ⏱️ TIPO DE TIEMPO
+            Text("Tipo de tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Box {
+                Button(
+                    onClick = { tipoTiempoExpandido = !tipoTiempoExpandido },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFE0B2))
+                ) {
+                    Text(tipoTiempoSeleccion, color = Color.Black, fontSize = 15.sp)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                }
+                DropdownMenu(
+                    expanded = tipoTiempoExpandido,
+                    onDismissRequest = { tipoTiempoExpandido = false },
+                    modifier = Modifier.fillMaxWidth(0.85f)
+                ) {
+                    listaTipoTiempo.forEach { opcion ->
+                        DropdownMenuItem(
+                            text = { Text(opcion) },
+                            onClick = {
+                                tipoTiempoSeleccion = opcion
+                                tipoTiempoExpandido = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 💰 VALOR
-            Text("💰 Valor:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text("Valor:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
                     onClick = { valorExpandido = !valorExpandido },
@@ -509,10 +577,10 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 🔢 CANTIDAD
-            Text("🔢 Cantidad de tickets:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text("Cantidad de tickets:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
                     onClick = { cantidadExpandido = !cantidadExpandido },
@@ -542,7 +610,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 📊 BARRA DE PROGRESO O CÓDIGO GENERADO
+            // 📊 BARRA DE PROGRESO
             when (estadoCreacion) {
                 is EstadoCreacion.Idle -> { /* Sin mostrar nada */ }
                 is EstadoCreacion.Creando -> {
@@ -557,9 +625,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 is EstadoCreacion.Terminado -> {
-                    val codigo = (estadoCreacion as EstadoCreacion.Terminado).codigo
-                    Text("✅ ¡Tickets creados!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
-                    Text("Código inicial: $codigo", fontSize = 14.sp, color = Color.Gray)
+                    Text("✅ ¡$cantidadSeleccion tickets creados!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
@@ -601,9 +667,9 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     }
 }
 
-// ESTADOS DE CREACIÓN
+// ESTADOS
 sealed class EstadoCreacion {
     object Idle : EstadoCreacion()
     data class Creando(var progreso: Float) : EstadoCreacion()
-    data class Terminado(val codigo: String) : EstadoCreacion()
+    object Terminado : EstadoCreacion()
 }

@@ -56,9 +56,9 @@ fun PantallaPrincipal() {
         if (routerSeleccionado == 1) {
             mapOf(
                 "nombre" to "📡 Router #1",
-                "modelo" to "RB750Gr3",
+                "modelo" to "RB750Gr3 (Balanceador)",
                 "ip" to "192.168.88.1",
-                "puerto" to "Balanceador",
+                "puertos" to "Puertos en uso: 1, 2, 3, 4",
                 "upload" to "2.4 MB/s",
                 "download" to "8.6 MB/s",
                 "temp" to "38.2 °C",
@@ -68,9 +68,9 @@ fun PantallaPrincipal() {
         } else {
             mapOf(
                 "nombre" to "📡 Router #2",
-                "modelo" to "RB3011",
+                "modelo" to "RB3011 (Administración)",
                 "ip" to "192.168.88.1",
-                "puerto" to "Administración",
+                "puertos" to "Puertos en uso: 1, 5",
                 "upload" to "4.8 MB/s",
                 "download" to "15.2 MB/s",
                 "temp" to "42.5 °C",
@@ -173,9 +173,9 @@ fun PantallaPrincipal() {
             Box(modifier = Modifier.weight(1f)) {
                 TarjetaRouter(
                     nombre = "📡 Router #1",
-                    modelo = "RB750Gr3",
+                    modelo = "RB750Gr3 (Balanceador)",
                     ip = "192.168.88.1",
-                    puerto = "Balanceador",
+                    puertos = "Puertos en uso: 1, 2, 3, 4",
                     seleccionado = routerSeleccionado == 1,
                     alTocar = { routerSeleccionado = 1 }
                 )
@@ -205,9 +205,9 @@ fun PantallaPrincipal() {
             Box(modifier = Modifier.weight(1f)) {
                 TarjetaRouter(
                     nombre = "📡 Router #2",
-                    modelo = "RB3011",
+                    modelo = "RB3011 (Administración)",
                     ip = "192.168.88.1",
-                    puerto = "Administración",
+                    puertos = "Puertos en uso: 1, 5",
                     seleccionado = routerSeleccionado == 2,
                     alTocar = { routerSeleccionado = 2 }
                 )
@@ -448,7 +448,7 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
             OutlinedTextField(
                 value = puerto,
                 onValueChange = { puerto = it },
-                label = { Text("🔌 Puerto") },
+                label = { Text("🔌 Puerto API") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
@@ -483,7 +483,7 @@ fun TarjetaRouter(
     nombre: String,
     modelo: String,
     ip: String,
-    puerto: String,
+    puertos: String,
     seleccionado: Boolean,
     alTocar: () -> Unit
 ) {
@@ -491,7 +491,7 @@ fun TarjetaRouter(
         onClick = alTocar,
         modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp),
+            .height(120.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
@@ -506,10 +506,10 @@ fun TarjetaRouter(
             verticalArrangement = Arrangement.Center
         ) {
             Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(modelo, fontSize = 12.sp, color = Color.Gray)
+            Text(modelo, fontSize = 13.sp, color = Color(0xFF37474F))
             Spacer(modifier = Modifier.height(6.dp))
             Text("IP: $ip", fontSize = 12.sp)
-            Text("Puerto: $puerto", fontSize = 12.sp)
+            Text(puertos, fontSize = 12.sp, color = Color(0xFF2E7D32))
         }
     }
 }

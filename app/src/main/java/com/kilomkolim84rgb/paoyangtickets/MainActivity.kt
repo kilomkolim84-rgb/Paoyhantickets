@@ -53,7 +53,6 @@ fun PantallaPrincipal() {
     var abrirConfigRouter1 by remember { mutableStateOf(false) }
     var abrirConfigRouter2 by remember { mutableStateOf(false) }
 
-    // CONTADORES
     val cantActivos = listaActivos.size
     val cantPausados = listaPausados.size
     val cantVencidos = listaVencidos.size
@@ -170,7 +169,6 @@ fun PantallaPrincipal() {
             modifier = Modifier.padding(bottom = 20.dp, top = 16.dp)
         )
 
-        // ROUTER 1 CON ENGRANAJE
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -203,7 +201,6 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ROUTER 2 CON ENGRANAJE
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -236,10 +233,8 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // CONSUMO CON CPU Y MEMORIA
         Card(
-            modifier = Modifier
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
         ) {
@@ -372,7 +367,6 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // TÍTULO + BOTÓN CERRAR (X)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -463,7 +457,6 @@ fun BotonPestanaVentana(
     }
 }
 
-// ===== DATOS =====
 val listaActivos = listOf(
     TicketEstado(
         codigo = "0MXLC6",
@@ -527,7 +520,6 @@ val listaVencidos = listOf(
     )
 )
 
-// ===== HISTORIAL — SOLO PUNTO DE COLOR, SIN TEXTO =====
 val listaHistorial = listOf(
     HistorialItem("0MXLC6", "16/07/2026", "18:50:00", "AA:BB:CC:DD:EE:01", Color(0xFF22C55E)),
     HistorialItem("LSJBHM", "16/07/2026", "18:45:00", "AA:BB:CC:DD:EE:02", Color(0xFF22C55E)),
@@ -696,7 +688,6 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // SOLO EL PUNTO DE COLOR — SIN TEXTO
                             Box(
                                 modifier = Modifier
                                     .size(16.dp)
@@ -774,7 +765,6 @@ fun TarjetaRouter(
         }
     }
 }
-
 val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
@@ -786,15 +776,21 @@ data class Ticket(
     val estado: String = "✅ Activo"
 )
 
-fun generarQR(texto: String, tamano: Int = 300): Bitmap {
+sealed class EstadoCreacion {
+    object Inactivo : EstadoCreacion()
+    data class Creando(val progreso: Float = 0f) : EstadoCreacion()
+    object Terminado : EstadoCreacion()
+}
+
+fun generarCodigoQR(texto: String, tamano: Int = 300): android.graphics.Bitmap {
     val escritor = QRCodeWriter()
-    val matriz = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
-    val ancho = matriz.width
-    val alto = matriz.height
-    val bitmap = Bitmap.createBitmap(ancho, alto, Bitmap.Config.RGB_565)
+    val matrizBit = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
+    val ancho = matrizBit.width
+    val alto = matrizBit.height
+    val bitmap = android.graphics.Bitmap.createBitmap(ancho, alto, android.graphics.Bitmap.Config.RGB_565)
     for (x in 0 until ancho) {
         for (y in 0 until alto) {
-            bitmap.setPixel(x, y, if (matriz[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
+            bitmap.setPixel(x, y, if (matrizBit[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
         }
     }
     return bitmap
@@ -810,7 +806,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
         else listaTickets.filter { it.codigo.contains(textoBuscar, ignoreCase = true) }
     }
 
-    if (ticketConQR != null) {
+    ticketConQR?.let { ticket ->
         Dialog(onDismissRequest = { ticketConQR = null }) {
             Card(
                 modifier = Modifier
@@ -825,10 +821,10 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     Text("📱 CÓDIGO QR", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    val qrBitmap = remember(ticketConQR!!.codigo) { generarQR(ticketConQR!!.codigo, 300) }
-                    androidx.compose.foundation.Image(
+                    val qrBitmap = remember(ticket.codigo) { generarCodigoQR(ticket.codigo, 300) }
+                    Image(
                         bitmap = qrBitmap.asImageBitmap(),
-                        contentDescription = "QR Code",
+                        contentDescription = "Código QR",
                         modifier = Modifier
                             .size(300.dp)
                             .border(BorderStroke(2.dp, Color.LightGray), RoundedCornerShape(8.dp))
@@ -836,9 +832,9 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Código: ${ticketConQR!!.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("${ticketConQR!!.valor} • ${ticketConQR!!.tiempo}", fontSize = 15.sp, color = Color.Gray)
-                    Text("Creado: ${ticketConQR!!.fechaHora}", fontSize = 13.sp, color = Color.Gray)
+                    Text("Código: ${ticket.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("${ticket.valor} • ${ticket.tiempo}", fontSize = 15.sp, color = Color.Gray)
+                    Text("Creado: ${ticket.fechaHora}", fontSize = 13.sp, color = Color.Gray)
 
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
@@ -884,7 +880,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     .verticalScroll(rememberScrollState())
             ) {
                 if (ticketsFiltrados.isEmpty()) {
-                    Text("📭 No hay tickets creados aún", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                    Text("📭 No hay tickets creados", color = Color.Gray, modifier = Modifier.padding(16.dp))
                 } else {
                     ticketsFiltrados.forEach { ticket ->
                         Card(
@@ -909,7 +905,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 Row {
                                     Button(
                                         onClick = { ticketConQR = ticket },
-                                        modifier = Modifier.wrapContentSize(),
+                                        modifier = Modifier.wrapContentWidth(),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
                                         Text("QR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -919,7 +915,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         onClick = { listaTickets.remove(ticket) },
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+                                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFEF4444))
                                     }
                                 }
                             }
@@ -941,7 +937,8 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     val listaValores = listOf(
         "S/ 0.50", "S/ 1.00", "S/ 2.00", "S/ 3.00", "S/ 4.00", "S/ 5.00",
         "S/ 8.00", "S/ 10.00", "S/ 20.00", "S/ 30.00", "S/ 40.00", "S/ 50.00",
-        "S/ 60.00", "S/ 70.00", "S/ 80.00", "S/ 90.00", "S/ 100.00"
+        "S/ 60.00", "S/ 70.00", "S/ 80.00", "S/ 90.00", "S/ 100.00",
+        "S/ 200.00", "S/ 500.00", "S/ 1000.00"
     )
 
     val listaTiempos = listOf(
@@ -968,28 +965,28 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     var digitosSeleccion by remember { mutableStateOf("6 Dígitos") }
     var tipoTiempoSeleccion by remember { mutableStateOf("⏱️ Tiempo Corrido") }
 
-    var estadoCreacion by remember { mutableStateOf<EstadoCreacion>(EstadoCreacion.Idle) }
+    var estadoCreacion by remember { mutableStateOf<EstadoCreacion>(EstadoCreacion.Inactivo) }
 
     fun generarCodigo(): String {
-        val cantDigitos = if (digitosSeleccion == "5 Dígitos") 5 else 6
+        val cantDig = if (digitosSeleccion == "5 Dígitos") 5 else 6
         return if (tipoCodigoSeleccion == "🔢 Solo Números") {
-            (1..cantDigitos).joinToString("") { Random.nextInt(0, 10).toString() }
+            (1..cantDig).joinToString("") { Random.nextInt(0, 10).toString() }
         } else {
-            val letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-            (1..cantDigitos).joinToString("") { letras.random().toString() }
+            val caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            (1..cantDig).joinToString("") { caracteres.random().toString() }
         }
     }
 
     fun obtenerFechaHora(): String {
-        val ahora = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault())
-        return ahora.format(java.util.Date())
+        val formato = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault())
+        return formato.format(java.util.Date())
     }
 
     LaunchedEffect(estadoCreacion) {
         if (estadoCreacion is EstadoCreacion.Creando) {
             val total = cantidadSeleccion.toInt()
             for (i in 1..total) {
-                (estadoCreacion as? EstadoCreacion.Creando)?.progreso = i.toFloat() / total.toFloat()
+                estadoCreacion = EstadoCreacion.Creando(i.toFloat() / total.toFloat())
                 kotlinx.coroutines.delay(30)
             }
             val fechaHora = obtenerFechaHora()
@@ -1097,11 +1094,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                     onDismissRequest = { tiempoExpandido = false },
                     modifier = Modifier.fillMaxWidth(0.85f)
                 ) {
-                    listaTiempos.forEach { tiempo ->
+                    listaTiempos.forEach { opcion ->
                         DropdownMenuItem(
-                            text = { Text(tiempo) },
+                            text = { Text(opcion) },
                             onClick = {
-                                tiempoSeleccion = tiempo
+                                tiempoSeleccion = opcion
                                 tiempoExpandido = false
                             }
                         )
@@ -1157,11 +1154,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                     onDismissRequest = { valorExpandido = false },
                     modifier = Modifier.fillMaxWidth(0.85f)
                 ) {
-                    listaValores.forEach { valor ->
+                    listaValores.forEach { opcion ->
                         DropdownMenuItem(
-                            text = { Text(valor) },
+                            text = { Text(opcion) },
                             onClick = {
-                                valorSeleccion = valor
+                                valorSeleccion = opcion
                                 valorExpandido = false
                             }
                         )
@@ -1187,11 +1184,11 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                     onDismissRequest = { cantidadExpandido = false },
                     modifier = Modifier.fillMaxWidth(0.85f)
                 ) {
-                    listaCantidades.forEach { cant ->
+                    listaCantidades.forEach { opcion ->
                         DropdownMenuItem(
-                            text = { Text(cant) },
+                            text = { Text(opcion) },
                             onClick = {
-                                cantidadSeleccion = cant
+                                cantidadSeleccion = opcion
                                 cantidadExpandido = false
                             }
                         )
@@ -1202,9 +1199,9 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
 
             when (estadoCreacion) {
-                is EstadoCreacion.Idle -> { }
+                is EstadoCreacion.Inactivo -> {}
                 is EstadoCreacion.Creando -> {
-                    val progreso = (estadoCreacion as? EstadoCreacion.Creando)?.progreso ?: 0f
+                    val progreso = (estadoCreacion as EstadoCreacion.Creando).progreso
                     Text("🔄 Creando $cantidadSeleccion tickets...", fontSize = 14.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(
@@ -1224,24 +1221,25 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (estadoCreacion is EstadoCreacion.Idle) {
+                if (estadoCreacion is EstadoCreacion.Inactivo || estadoCreacion is EstadoCreacion.Terminado) {
                     Button(
-                         onClick = {
-                             estadoCreacion = EstadoCreacion.Idle
-                             onCerrar()
-                         },
-                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                         modifier = Modifier.fillMaxWidth()
-                     ) {
-                         Text("ACEPTAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                     }
-                 }
-             }
-         }
-     }
- }
- sealed class EstadoCreacion {
-     object Idle : EstadoCreacion()
-     data class Creando(var progreso: Float) : EstadoCreacion()
-     object Terminado : EstadoCreacion()
- }
+                        onClick = onCerrar,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                    ) {
+                        Text("CANCELAR", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, textAlign = TextAlign.Center)
+                    }
+                    Button(
+                        onClick = { estadoCreacion = EstadoCreacion.Creando() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                    ) {
+                        Text("CREAR", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+        }
+    }
+}

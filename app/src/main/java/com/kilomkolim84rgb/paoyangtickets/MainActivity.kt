@@ -150,7 +150,8 @@ fun PantallaPrincipal() {
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF5F5F5))
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -158,10 +159,9 @@ fun PantallaPrincipal() {
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF2C3E50),
-            modifier = Modifier.padding(bottom = 20.dp, top = 16.dp)
+            modifier = Modifier.padding(bottom = 16.dp, top = 16.dp)
         )
 
-        // === FILA DE ROUTERS LADO A LADO CON ENGRANAJE PEQUEÑO ===
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -180,14 +180,14 @@ fun PantallaPrincipal() {
             IconButton(
                 onClick = { abrirConfigRouter1 = true },
                 modifier = Modifier
-                    .size(36.dp)  // ✅ ENGRANAJE PEQUEÑO
+                    .size(36.dp)
                     .background(Color(0xFFE0E0E0), CircleShape)
             ) {
                 Icon(
                     Icons.Default.Settings,
                     contentDescription = "Configuración",
                     tint = Color(0xFF37474F),
-                    modifier = Modifier.size(20.dp)  // ✅ ÍCONO PEQUEÑO
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -212,21 +212,20 @@ fun PantallaPrincipal() {
             IconButton(
                 onClick = { abrirConfigRouter2 = true },
                 modifier = Modifier
-                    .size(36.dp)  // ✅ ENGRANAJE PEQUEÑO
+                    .size(36.dp)
                     .background(Color(0xFFE0E0E0), CircleShape)
             ) {
                 Icon(
                     Icons.Default.Settings,
                     contentDescription = "Configuración",
                     tint = Color(0xFF37474F),
-                    modifier = Modifier.size(20.dp)  // ✅ ÍCONO PEQUEÑO
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // === TARJETA DE CONSUMO MÁS PEQUEÑA ===
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -235,7 +234,7 @@ fun PantallaPrincipal() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),  // ✅ MENOS ESPACIO → MÁS CHICA
+                    .padding(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -269,18 +268,17 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // === BOTONES IGUALES A LA SEGUNDA IMAGEN ===
         Button(
             onClick = { abrirCrearTicket = true },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(65.dp),
+                .height(60.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
         ) {
             Text(
                 text = "🎫 CREAR NUEVO TICKET",
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -297,7 +295,7 @@ fun PantallaPrincipal() {
         ) {
             Text(
                 text = "📋 TICKETS CREADOS",
-                fontSize = 18.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -307,42 +305,44 @@ fun PantallaPrincipal() {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = { abrirActivos = true },
-                modifier = Modifier.weight(1f).height(65.dp),
+                modifier = Modifier.weight(1f).height(55.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
             ) {
-                Text("🟢 ACTIVOS", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("🟢 ACTIVOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { abrirPausados = true },
-                modifier = Modifier.weight(1f).height(65.dp),
+                modifier = Modifier.weight(1f).height(55.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
             ) {
-                Text("🟡 PAUSADOS", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("🟡 PAUSADOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = { abrirVencidos = true },
-                modifier = Modifier.weight(1f).height(65.dp),
+                modifier = Modifier.weight(1f).height(55.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
             ) {
-                Text("🔴 VENCIDOS", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("🔴 VENCIDOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { abrirHistorial = true },
-                modifier = Modifier.weight(1f).height(65.dp),
+                modifier = Modifier.weight(1f).height(55.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
             ) {
-                Text("📋 HISTORIAL", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("📋 HISTORIAL", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
+        
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }
 
@@ -414,7 +414,7 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = { /* Conectar a MikroTik */ },
+                onClick = { },
                 modifier = Modifier.fillMaxWidth().height(55.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
@@ -448,7 +448,7 @@ fun TarjetaRouter(
         onClick = alTocar,
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp),
+            .height(110.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
@@ -487,12 +487,12 @@ sealed class EstadoCreacion {
     object Terminado : EstadoCreacion()
 }
 
-fun generarCodigoQR(texto: String, tamano: Int = 300): android.graphics.Bitmap {
+fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
     val escritor = QRCodeWriter()
     val matrizBit = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
     val ancho = matrizBit.width
     val alto = matrizBit.height
-    val bitmap = android.graphics.Bitmap.createBitmap(ancho, alto, android.graphics.Bitmap.Config.RGB_565)
+    val bitmap = Bitmap.createBitmap(ancho, alto, Bitmap.Config.RGB_565)
     for (x in 0 until ancho) {
         for (y in 0 until alto) {
             bitmap.setPixel(x, y, if (matrizBit[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
@@ -924,240 +924,4 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (estadoCreacion is EstadoCreacion.Inactivo || estadoCreacion is EstadoCreacion.Terminado) {
-                    Button(
-                        onClick = onCerrar,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
-                    ) {
-                        Text("CANCELAR", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, textAlign = TextAlign.Center)
-                    }
-                    Button(
-                        onClick = { estadoCreacion = EstadoCreacion.Creando() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
-                    ) {
-                        Text("CREAR", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, textAlign = TextAlign.Center)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ========== FUNCIONES DE LISTA DE TICKETS, HISTORIAL Y ESTADOS ==========
-
-data class TicketEstado(
-    val codigo: String,
-    val subida: String,
-    val bajada: String,
-    val mac: String,
-    val fecha: String,
-    val hora: String,
-    val foto: Boolean
-)
-
-data class HistorialItem(
-    val codigo: String,
-    val fecha: String,
-    val hora: String,
-    val mac: String,
-    val colorPunto: Color
-)
-
-val listaActivos = listOf(
-    TicketEstado(
-        codigo = "0MXLC6",
-        subida = "2.1 MB/s",
-        bajada = "7.8 MB/s",
-        mac = "AA:BB:CC:DD:EE:01",
-        fecha = "16/07/2026",
-        hora = "18:50:00",
-        foto = true
-    ),
-    TicketEstado(
-        codigo = "LSJBHM",
-        subida = "1.5 MB/s",
-        bajada = "5.2 MB/s",
-        mac = "AA:BB:CC:DD:EE:02",
-        fecha = "16/07/2026",
-        hora = "18:45:00",
-        foto = true
-    )
-)
-
-val listaPausados = listOf(
-    TicketEstado(
-        codigo = "0DUUHT",
-        subida = "—",
-        bajada = "—",
-        mac = "AA:BB:CC:DD:EE:03",
-        fecha = "16/07/2026",
-        hora = "17:30:00",
-        foto = true
-    )
-)
-
-val listaVencidos = listOf(
-    TicketEstado(
-        codigo = "DEF456",
-        subida = "—",
-        bajada = "—",
-        mac = "AA:BB:CC:DD:EE:05",
-        fecha = "16/07/2026",
-        hora = "15:10:00",
-        foto = true
-    )
-)
-
-val listaHistorial = listOf(
-    HistorialItem("0MXLC6", "16/07/2026", "18:50:00", "AA:BB:CC:DD:EE:01", Color(0xFF22C55E)),
-    HistorialItem("LSJBHM", "16/07/2026", "18:45:00", "AA:BB:CC:DD:EE:02", Color(0xFF22C55E)),
-    HistorialItem("0DUUHT", "16/07/2026", "17:30:00", "AA:BB:CC:DD:EE:03", Color(0xFFF59E0B)),
-    HistorialItem("DEF456", "16/07/2026", "15:10:00", "AA:BB:CC:DD:EE:05", Color(0xFFEF4444))
-)
-
-@Composable
-fun ListaTicketsVentana(
-    titulo: String,
-    puntoColor: Color,
-    tickets: List<TicketEstado>,
-    onCerrar: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(titulo, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 450.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                tickets.forEach { ticket ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clip(CircleShape)
-                                    .background(puntoColor)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFE0E0E0)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Person,
-                                    contentDescription = "Foto",
-                                    modifier = Modifier.size(30.dp),
-                                    tint = Color(0xFF757575)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column(m
-// ========== CONTINUACIÓN DE LA PARTE 2 ==========
-
-fun HistorialVentana(onCerrar: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("📋 HISTORIAL DE TICKETS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 450.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                listaHistorial.forEach { item ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clip(CircleShape)
-                                    .background(item.colorPunto)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Código: ${item.codigo}",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "📅 ${item.fecha}  ${item.hora}",
-                                    fontSize = 13.sp,
-                                    color = Color.Gray
-                                )
-                                Text(
-                                    "📶 MAC: ${item.mac}",
-                                    fontSize = 12.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(
-                onClick = onCerrar,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
+                horizontalArrangem

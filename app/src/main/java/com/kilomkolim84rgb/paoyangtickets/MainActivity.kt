@@ -241,7 +241,6 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ===== PESTAÑAS QUE ABREN VENTANAS COMPLETAS =====
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BotonPestanaVentana(
@@ -289,7 +288,6 @@ fun BotonPestanaVentana(
     }
 }
 
-// ===== DATOS SIMULADOS =====
 val listaActivos = listOf(
     TicketEstado(
         codigo = "0MXLC6",
@@ -418,17 +416,14 @@ fun ListaTicketsVentana(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Punto de color ENCENDIDO
                             Box(
                                 modifier = Modifier
                                     .size(16.dp)
                                     .clip(CircleShape)
                                     .background(puntoColor)
-                                    .border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.2f), CircleShape))
                             )
                             Spacer(modifier = Modifier.width(12.dp))
 
-                            // Foto de perfil
                             Box(
                                 modifier = Modifier
                                     .size(52.dp)
@@ -445,7 +440,6 @@ fun ListaTicketsVentana(
                             }
                             Spacer(modifier = Modifier.width(14.dp))
 
-                            // Datos completos
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Código: ${ticket.codigo}",
@@ -1012,7 +1006,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             when (estadoCreacion) {
                 is EstadoCreacion.Idle -> { }
                 is EstadoCreacion.Creando -> {
-                    val progreso = (estadoCreacion as EstadoCreacion.Creando).progreso
+                    val progreso = (estadoCreacion as? EstadoCreacion.Creando)?.progreso ?: 0f
                     Text("🔄 Creando $cantidadSeleccion tickets...", fontSize = 14.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(

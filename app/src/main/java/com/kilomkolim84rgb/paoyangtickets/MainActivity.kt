@@ -61,7 +61,9 @@ fun PantallaPrincipal() {
                 "puerto" to "Balanceador",
                 "upload" to "2.4 MB/s",
                 "download" to "8.6 MB/s",
-                "temp" to "38.2 °C"
+                "temp" to "38.2 °C",
+                "cpu" to "23%",
+                "ram" to "47%"
             )
         } else {
             mapOf(
@@ -71,7 +73,9 @@ fun PantallaPrincipal() {
                 "puerto" to "Administración",
                 "upload" to "4.8 MB/s",
                 "download" to "15.2 MB/s",
-                "temp" to "42.5 °C"
+                "temp" to "42.5 °C",
+                "cpu" to "18%",
+                "ram" to "35%"
             )
         }
     }
@@ -233,7 +237,7 @@ fun PantallaPrincipal() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -242,21 +246,43 @@ fun PantallaPrincipal() {
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2E7D32)
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // PRIMERA FILA: Subida y Bajada
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⬆️ UPLOAD", fontSize = 13.sp, color = Color.Gray)
+                        Text("⬆️ SUBIDA", fontSize = 13.sp, color = Color.Gray)
                         Text("${datosRouter["upload"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⬇️ DOWNLOAD", fontSize = 13.sp, color = Color.Gray)
+                        Text("⬇️ BAJADA", fontSize = 13.sp, color = Color.Gray)
                         Text("${datosRouter["download"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // SEGUNDA FILA: CPU y RAM
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("💻 CPU", fontSize = 13.sp, color = Color.Gray)
+                        Text("${datosRouter["cpu"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🧠 MEMORIA RAM", fontSize = 13.sp, color = Color.Gray)
+                        Text("${datosRouter["ram"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF283593))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // TERCERA FILA: Temperatura
                 Text(
                     "🌡️ Temperatura: ${datosRouter["temp"]}",
                     fontSize = 14.sp,

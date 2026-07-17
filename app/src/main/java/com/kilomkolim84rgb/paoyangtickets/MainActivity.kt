@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +50,13 @@ fun PantallaPrincipal() {
     var abrirPausados by remember { mutableStateOf(false) }
     var abrirVencidos by remember { mutableStateOf(false) }
     var abrirHistorial by remember { mutableStateOf(false) }
+    var abrirConfigRouter1 by remember { mutableStateOf(false) }
+    var abrirConfigRouter2 by remember { mutableStateOf(false) }
+
+    // CONTADORES
+    val cantActivos = listaActivos.size
+    val cantPausados = listaPausados.size
+    val cantVencidos = listaVencidos.size
 
     val datosRouter = remember(routerSeleccionado) {
         if (routerSeleccionado == 1) {
@@ -58,7 +67,9 @@ fun PantallaPrincipal() {
                 "puerto" to "Balanceador",
                 "upload" to "2.4 MB/s",
                 "download" to "8.6 MB/s",
-                "temp" to "38.2 °C"
+                "temp" to "38.2 °C",
+                "cpu" to "4%",
+                "memoria" to "32%"
             )
         } else {
             mapOf(
@@ -68,7 +79,27 @@ fun PantallaPrincipal() {
                 "puerto" to "Administración",
                 "upload" to "4.8 MB/s",
                 "download" to "15.2 MB/s",
-                "temp" to "42.5 °C"
+                "temp" to "42.5 °C",
+                "cpu" to "8%",
+                "memoria" to "45%"
+            )
+        }
+    }
+
+    if (abrirConfigRouter1) {
+        Dialog(onDismissRequest = { abrirConfigRouter1 = false }) {
+            VentanaConfiguracionRouter(
+                titulo = "⚙️ Router #1 — RB750Gr3",
+                onCerrar = { abrirConfigRouter1 = false }
+            )
+        }
+    }
+
+    if (abrirConfigRouter2) {
+        Dialog(onDismissRequest = { abrirConfigRouter2 = false }) {
+            VentanaConfiguracionRouter(
+                titulo = "⚙️ Router #2 — RB3011",
+                onCerrar = { abrirConfigRouter2 = false }
             )
         }
     }
@@ -139,34 +170,76 @@ fun PantallaPrincipal() {
             modifier = Modifier.padding(bottom = 20.dp, top = 16.dp)
         )
 
+        // ROUTER 1 CON ENGRANAJE
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            TarjetaRouter(
-                nombre = "📡 Router #1",
-                modelo = "RB750Gr3",
-                ip = "192.168.88.1",
-                puerto = "Balanceador",
-                seleccionado = routerSeleccionado == 1,
-                alTocar = { routerSeleccionado = 1 }
-            )
-            TarjetaRouter(
-                nombre = "📡 Router #2",
-                modelo = "RB3011",
-                ip = "192.168.88.1",
-                puerto = "Administración",
-                seleccionado = routerSeleccionado == 2,
-                alTocar = { routerSeleccionado = 2 }
-            )
+            Box(modifier = Modifier.weight(1f)) {
+                TarjetaRouter(
+                    nombre = "📡 Router #1",
+                    modelo = "RB750Gr3",
+                    ip = "192.168.88.1",
+                    puerto = "Balanceador",
+                    seleccionado = routerSeleccionado == 1,
+                    alTocar = { routerSeleccionado = 1 }
+                )
+            }
+            IconButton(
+                onClick = { abrirConfigRouter1 = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color(0xFFE0E0E0), CircleShape)
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Configuración",
+                    tint = Color(0xFF37474F),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ROUTER 2 CON ENGRANAJE
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                TarjetaRouter(
+                    nombre = "📡 Router #2",
+                    modelo = "RB3011",
+                    ip = "192.168.88.1",
+                    puerto = "Administración",
+                    seleccionado = routerSeleccionado == 2,
+                    alTocar = { routerSeleccionado = 2 }
+                )
+            }
+            IconButton(
+                onClick = { abrirConfigRouter2 = true },
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color(0xFFE0E0E0), CircleShape)
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Configuración",
+                    tint = Color(0xFF37474F),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // CONSUMO CON CPU Y MEMORIA
         Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp),
+                .fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
         ) {
@@ -196,12 +269,24 @@ fun PantallaPrincipal() {
                         Text("${datosRouter["download"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
                     }
                 }
-                Text(
-                    text = "🌡️ Temperatura: ${datosRouter["temp"]}",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("💻 CPU", fontSize = 14.sp, color = Color.Gray)
+                        Text("${datosRouter["cpu"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🧠 MEMORIA", fontSize = 14.sp, color = Color.Gray)
+                        Text("${datosRouter["memoria"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF283593))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🌡️ TEMP", fontSize = 14.sp, color = Color.Gray)
+                        Text("${datosRouter["temp"]}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+                    }
+                }
             }
         }
 
@@ -244,12 +329,12 @@ fun PantallaPrincipal() {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BotonPestanaVentana(
-                    texto = "🟢 ACTIVOS",
+                    texto = "🟢 ACTIVOS ($cantActivos)",
                     color = Color(0xFF22C55E),
                     modifier = Modifier.weight(1f)
                 ) { abrirActivos = true }
                 BotonPestanaVentana(
-                    texto = "🟡 PAUSADOS",
+                    texto = "🟡 PAUSADOS ($cantPausados)",
                     color = Color(0xFFF59E0B),
                     modifier = Modifier.weight(1f)
                 ) { abrirPausados = true }
@@ -257,7 +342,7 @@ fun PantallaPrincipal() {
             Spacer(modifier = Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BotonPestanaVentana(
-                    texto = "🔴 VENCIDOS",
+                    texto = "🔴 VENCIDOS ($cantVencidos)",
                     color = Color(0xFFEF4444),
                     modifier = Modifier.weight(1f)
                 ) { abrirVencidos = true }
@@ -266,6 +351,96 @@ fun PantallaPrincipal() {
                     color = Color(0xFF6366F1),
                     modifier = Modifier.weight(1f)
                 ) { abrirHistorial = true }
+            }
+        }
+    }
+}
+
+@Composable
+fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
+    var usuario by remember { mutableStateOf("") }
+    var contrasena by remember { mutableStateOf("") }
+    var puerto by remember { mutableStateOf("8728") }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // TÍTULO + BOTÓN CERRAR (X)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(titulo, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                IconButton(
+                    onClick = onCerrar,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color(0xFFEFEFEF), CircleShape)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color(0xFF444444))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            OutlinedTextField(
+                value = usuario,
+                onValueChange = { usuario = it },
+                label = { Text("👤 Usuario") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = contrasena,
+                onValueChange = { contrasena = it },
+                label = { Text("🔒 Contraseña") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = puerto,
+                onValueChange = { puerto = it },
+                label = { Text("🔌 Puerto") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = { /* Conectar */ },
+                modifier = Modifier.fillMaxWidth().height(55.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
+            ) {
+                Text("🔗 CONECTAR", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("SALIR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -284,7 +459,7 @@ fun BotonPestanaVentana(
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(containerColor = color)
     ) {
-        Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = Color.White)
     }
 }
 
@@ -348,15 +523,6 @@ val listaVencidos = listOf(
         mac = "AA:BB:CC:DD:EE:05",
         fecha = "16/07/2026",
         hora = "15:10:00",
-        foto = true
-    ),
-    TicketEstado(
-        codigo = "GHI789",
-        subida = "—",
-        bajada = "—",
-        mac = "AA:BB:CC:DD:EE:06",
-        fecha = "16/07/2026",
-        hora = "14:05:00",
         foto = true
     )
 )
@@ -585,7 +751,7 @@ fun TarjetaRouter(
     Card(
         onClick = alTocar,
         modifier = Modifier
-            .width(160.dp)
+            .fillMaxWidth()
             .height(130.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
@@ -1059,39 +1225,3 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (estadoCreacion is EstadoCreacion.Idle) {
-                    Button(
-                        onClick = onCerrar,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("CANCELAR", fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
-                    Button(
-                        onClick = { estadoCreacion = EstadoCreacion.Creando(0f) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("CREAR", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Button(
-                        onClick = {
-                            estadoCreacion = EstadoCreacion.Idle
-                            onCerrar()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("ACEPTAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    }
-}
-
-sealed class EstadoCreacion {
-    object Idle : EstadoCreacion()
-    data class Creando(var progreso: Float) : EstadoCreacion()
-    object Terminado : EstadoCreacion()
-}

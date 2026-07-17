@@ -1220,12 +1220,4 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (estadoCreacion is EstadoCreacion.Idle) {
-                    Button(
-                        onClick = { estadoCreacion = EstadoCreacion.Creando() },
-                        modifier = Modifier.weight(1f).height(55.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.button
+                modifier = Modifier.fill

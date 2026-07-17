@@ -24,7 +24,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -763,7 +762,9 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 ) {
                     Text(digitosSeleccion, color = Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, content
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
+                }
+                DropdownMenu(
                     expanded = digitosExpandido,
                     onDismissRequest = { digitosExpandido = false },
                     modifier = Modifier.fillMaxWidth(0.85f)

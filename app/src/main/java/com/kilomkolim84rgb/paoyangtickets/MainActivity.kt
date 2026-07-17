@@ -470,6 +470,7 @@ fun TarjetaRouter(
         }
     }
 }
+
 val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
@@ -762,9 +763,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 ) {
                     Text(digitosSeleccion, color = Color.Black, fontSize = 15.sp)
                     Spacer(modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "", tint = Color.Black)
-                }
-                DropdownMenu(
+                    Icon(Icons.Default.ArrowDropDown, content
                     expanded = digitosExpandido,
                     onDismissRequest = { digitosExpandido = false },
                     modifier = Modifier.fillMaxWidth(0.85f)
@@ -924,4 +923,216 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangem
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (estadoCreacion is EstadoCreacion.Inactivo || estadoCreacion is EstadoCreacion.Terminado) {
+                    Button(
+                        onClick = onCerrar,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Text("CANCELAR", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { estadoCreacion = EstadoCreacion.Creando() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Text("CREAR", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+data class TicketEstado(
+    val codigo: String,
+    val subida: String,
+    val bajada: String,
+    val mac: String,
+    val fecha: String,
+    val hora: String,
+    val foto: Boolean
+)
+
+data class HistorialItem(
+    val codigo: String,
+    val fecha: String,
+    val hora: String,
+    val mac: String,
+    val colorPunto: Color
+)
+
+val listaActivos = listOf(
+    TicketEstado("0MXLC6", "2.1 MB/s", "7.8 MB/s", "AA:BB:CC:DD:EE:01", "16/07/2026", "18:50:00", true),
+    TicketEstado("LSJBHM", "1.5 MB/s", "5.2 MB/s", "AA:BB:CC:DD:EE:02", "16/07/2026", "18:45:00", true)
+)
+
+val listaPausados = listOf(
+    TicketEstado("0DUUHT", "—", "—", "AA:BB:CC:DD:EE:03", "16/07/2026", "17:30:00", true)
+)
+
+val listaVencidos = listOf(
+    TicketEstado("DEF456", "—", "—", "AA:BB:CC:DD:EE:05", "16/07/2026", "15:10:00", true)
+)
+
+val listaHistorial = listOf(
+    HistorialItem("0MXLC6", "16/07/2026", "18:50:00", "AA:BB:CC:DD:EE:01", Color(0xFF22C55E)),
+    HistorialItem("LSJBHM", "16/07/2026", "18:45:00", "AA:BB:CC:DD:EE:02", Color(0xFF22C55E)),
+    HistorialItem("0DUUHT", "16/07/2026", "17:30:00", "AA:BB:CC:DD:EE:03", Color(0xFFF59E0B)),
+    HistorialItem("DEF456", "16/07/2026", "15:10:00", "AA:BB:CC:DD:EE:05", Color(0xFFEF4444))
+)
+
+@Composable
+fun ListaTicketsVentana(
+    titulo: String,
+    puntoColor: Color,
+    tickets: List<TicketEstado>,
+    onCerrar: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(titulo, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                tickets.forEach { ticket ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(puntoColor)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFE0E0E0)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = "Foto",
+                                    modifier = Modifier.size(30.dp),
+                                    tint = Color(0xFF757575)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Código: ${ticket.codigo}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("⬆️ Subida: ${ticket.subida}", fontSize = 13.sp, color = Color(0xFF2E7D32))
+                                Text("⬇️ Bajada: ${ticket.bajada}", fontSize = 13.sp, color = Color(0xFF1565C0))
+                                Text("📶 MAC: ${ticket.mac}", fontSize = 12.sp, color = Color.Gray)
+                                Text("📅 ${ticket.fecha}  ${ticket.hora}", fontSize = 12.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun HistorialVentana(onCerrar: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("📋 HISTORIAL DE TICKETS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                listaHistorial.forEach { item ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(item.colorPunto)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Código: ${item.codigo}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("📅 ${item.fecha}  ${item.hora}", fontSize = 13.sp, color = Color.Gray)
+                                Text("📶 MAC: ${item.mac}", fontSize = 12.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}

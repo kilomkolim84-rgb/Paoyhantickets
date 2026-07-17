@@ -7,18 +7,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -40,6 +44,7 @@ fun PantallaPrincipal() {
     var routerSeleccionado by remember { mutableStateOf(1) }
     var abrirCrearTicket by remember { mutableStateOf(false) }
     var abrirTicketsCreados by remember { mutableStateOf(false) }
+    var pestanaActiva by remember { mutableStateOf("activos") }
 
     val datosRouter = remember(routerSeleccionado) {
         if (routerSeleccionado == 1) {
@@ -194,14 +199,256 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana(texto = "🟢 Activos", color = Color(0xFF22C55E), modifier = Modifier.weight(1f))
-            BotonPestana(texto = "🟡 Pausados", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
+        // ===== PESTAÑAS ACTIVOS / PAUSADOS / VENCIDOS / HISTORIAL =====
+        Column {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BotonPestana(
+                    texto = "🟢 Activos",
+                    color = Color(0xFF22C55E),
+                    seleccionada = pestanaActiva == "activos",
+                    modifier = Modifier.weight(1f)
+                ) { pestanaActiva = "activos" }
+                BotonPestana(
+                    texto = "🟡 Pausados",
+                    color = Color(0xFFF59E0B),
+                    seleccionada = pestanaActiva == "pausados",
+                    modifier = Modifier.weight(1f)
+                ) { pestanaActiva = "pausados" }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BotonPestana(
+                    texto = "🔴 Vencidos",
+                    color = Color(0xFFEF4444),
+                    seleccionada = pestanaActiva == "vencidos",
+                    modifier = Modifier.weight(1f)
+                ) { pestanaActiva = "vencidos" }
+                BotonPestana(
+                    texto = "📋 Historial",
+                    color = Color(0xFF6366F1),
+                    seleccionada = pestanaActiva == "historial",
+                    modifier = Modifier.weight(1f)
+                ) { pestanaActiva = "historial" }
+            }
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana(texto = "🔴 Vencidos", color = Color(0xFFEF4444), modifier = Modifier.weight(1f))
-            BotonPestana(texto = "📋 Historial", color = Color(0xFF6366F1), modifier = Modifier.weight(1f))
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ===== CONTENIDO DE CADA PESTAÑA =====
+        when (pestanaActiva) {
+            "activos" -> ListaTicketsEstado(puntosColor = Color(0xFF22C55E), tickets = listaActivos)
+            "pausados" -> ListaTicketsEstado(puntosColor = Color(0xFFF59E0B), tickets = listaPausados)
+            "vencidos" -> ListaTicketsEstado(puntosColor = Color(0xFFEF4444), tickets = listaVencidos)
+            "historial" -> ListaHistorial()
+        }
+    }
+}
+
+@Composable
+fun BotonPestana(
+    texto: String,
+    color: Color,
+    seleccionada: Boolean,
+    modifier: Modifier = Modifier,
+    alTocar: () -> Unit
+) {
+    Button(
+        onClick = alTocar,
+        modifier = modifier.height(55.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (seleccionada) color else color.copy(alpha = 0.6f)
+        ),
+        border = if (seleccionada) BorderStroke(2.dp, Color.Black.copy(alpha = 0.3f)) else null
+    ) {
+        Text(texto, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+    }
+}
+
+// ===== DATOS SIMULADOS =====
+val listaActivos = listOf(
+    TicketEstado(
+        codigo = "0MXLC6",
+        subida = "2.1 MB/s",
+        bajada = "7.8 MB/s",
+        mac = "AA:BB:CC:DD:EE:01",
+        foto = true
+    ),
+    TicketEstado(
+        codigo = "LSJBHM",
+        subida = "1.5 MB/s",
+        bajada = "5.2 MB/s",
+        mac = "AA:BB:CC:DD:EE:02",
+        foto = true
+    )
+)
+
+val listaPausados = listOf(
+    TicketEstado(
+        codigo = "0DUUHT",
+        subida = "—",
+        bajada = "—",
+        mac = "AA:BB:CC:DD:EE:03",
+        foto = true
+    ),
+    TicketEstado(
+        codigo = "XYZ123",
+        subida = "—",
+        bajada = "—",
+        mac = "AA:BB:CC:DD:EE:04",
+        foto = true
+    )
+)
+
+val listaVencidos = listOf(
+    TicketEstado(
+        codigo = "ABC789",
+        subida = "—",
+        bajada = "—",
+        mac = "AA:BB:CC:DD:EE:05",
+        foto = true
+    ),
+    TicketEstado(
+        codigo = "DEF456",
+        subida = "—",
+        bajada = "—",
+        mac = "AA:BB:CC:DD:EE:06",
+        foto = true
+    )
+)
+
+val listaHistorial = listOf(
+    HistorialItem("0MXLC6", "16/07/2026 18:50:00", "✅ Válido"),
+    HistorialItem("LSJBHM", "16/07/2026 18:45:00", "✅ Válido"),
+    HistorialItem("0DUUHT", "16/07/2026 17:30:00", "⏸️ Pausado"),
+    HistorialItem("XYZ123", "16/07/2026 16:20:00", "⏸️ Pausado"),
+    HistorialItem("ABC789", "16/07/2026 15:10:00", "🔴 Vencido"),
+    HistorialItem("DEF456", "16/07/2026 14:05:00", "🔴 Vencido")
+)
+
+data class TicketEstado(
+    val codigo: String,
+    val subida: String,
+    val bajada: String,
+    val mac: String,
+    val foto: Boolean
+)
+
+data class HistorialItem(
+    val codigo: String,
+    val fechaActivacion: String,
+    val estado: String
+)
+
+@Composable
+fun ListaTicketsEstado(puntosColor: Color, tickets: List<TicketEstado>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+    ) {
+        tickets.forEach { ticket ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Punto de color
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(puntosColor)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // Foto de perfil
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE0E0E0)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = "Foto",
+                            modifier = Modifier.size(28.dp),
+                            tint = Color(0xFF757575)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    // Datos
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Código: ${ticket.codigo}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "⬆️ Subida: ${ticket.subida}",
+                            fontSize = 13.sp,
+                            color = Color(0xFF2E7D32)
+                        )
+                        Text(
+                            "⬇️ Bajada: ${ticket.bajada}",
+                            fontSize = 13.sp,
+                            color = Color(0xFF1565C0)
+                        )
+                        Text(
+                            "📶 MAC: ${ticket.mac}",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ListaHistorial() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Text(
+            text = "📋 Últimas 6 activaciones",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 10.dp)
+        )
+        listaHistorial.forEach { item ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Código: ${item.codigo}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text("📅 Activado: ${item.fechaActivacion}", fontSize = 13.sp, color = Color.Gray)
+                    }
+                    Text(item.estado, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
@@ -239,18 +486,6 @@ fun TarjetaRouter(
             Text("IP: $ip", fontSize = 12.sp)
             Text("Puerto: $puerto", fontSize = 12.sp)
         }
-    }
-}
-
-@Composable
-fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier) {
-    Button(
-        onClick = { },
-        modifier = modifier.height(55.dp),
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = color)
-    ) {
-        Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -429,7 +664,10 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     )
 
     val listaTipoTiempo = listOf("⏱️ Tiempo Corrido", "⏸️ Tiempo Pausado")
-    val listaCantidades = listOf("1", "2", "3", "5", "10", "20", "50", "100")
+
+    // ✅ CANTIDAD AMPLIADA: 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000
+    val listaCantidades = listOf("1", "2", "3", "5", "10", "20", "50", "100", "200", "500", "1000")
+
     val listaTipoCodigo = listOf("🔢 Solo Números", "🔤 Letras + Números")
     val listaDigitos = listOf("5 Dígitos", "6 Dígitos")
 
@@ -709,14 +947,14 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("❌ CANCELAR", fontSize = 13.sp)
+                        Text("CANCELAR", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                     Button(
                         onClick = { estadoCreacion = EstadoCreacion.Creando(0f) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("✅ CREAR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("CREAR", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Button(
@@ -727,7 +965,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("✅ ACEPTAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text("ACEPTAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

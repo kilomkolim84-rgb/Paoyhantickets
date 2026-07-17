@@ -53,10 +53,6 @@ fun PantallaPrincipal() {
     var abrirConfigRouter1 by remember { mutableStateOf(false) }
     var abrirConfigRouter2 by remember { mutableStateOf(false) }
 
-    val cantActivos = listaActivos.size
-    val cantPausados = listaPausados.size
-    val cantVencidos = listaVencidos.size
-
     val datosRouter = remember(routerSeleccionado) {
         if (routerSeleccionado == 1) {
             mapOf(
@@ -66,9 +62,9 @@ fun PantallaPrincipal() {
                 "puerto" to "Balanceador",
                 "upload" to "2.4 MB/s",
                 "download" to "8.6 MB/s",
-                "temp" to "38.2 °C",
                 "cpu" to "4%",
-                "memoria" to "32%"
+                "memoria" to "32%",
+                "temp" to "38.2 °C"
             )
         } else {
             mapOf(
@@ -78,9 +74,9 @@ fun PantallaPrincipal() {
                 "puerto" to "Administración",
                 "upload" to "4.8 MB/s",
                 "download" to "15.2 MB/s",
-                "temp" to "42.5 °C",
                 "cpu" to "8%",
-                "memoria" to "45%"
+                "memoria" to "45%",
+                "temp" to "42.5 °C"
             )
         }
     }
@@ -324,12 +320,12 @@ fun PantallaPrincipal() {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BotonPestanaVentana(
-                    texto = "🟢 ACTIVOS ($cantActivos)",
+                    texto = "🟢 ACTIVOS",
                     color = Color(0xFF22C55E),
                     modifier = Modifier.weight(1f)
                 ) { abrirActivos = true }
                 BotonPestanaVentana(
-                    texto = "🟡 PAUSADOS ($cantPausados)",
+                    texto = "🟡 PAUSADOS",
                     color = Color(0xFFF59E0B),
                     modifier = Modifier.weight(1f)
                 ) { abrirPausados = true }
@@ -337,7 +333,7 @@ fun PantallaPrincipal() {
             Spacer(modifier = Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BotonPestanaVentana(
-                    texto = "🔴 VENCIDOS ($cantVencidos)",
+                    texto = "🔴 VENCIDOS",
                     color = Color(0xFFEF4444),
                     modifier = Modifier.weight(1f)
                 ) { abrirVencidos = true }
@@ -419,7 +415,7 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = { /* Conectar */ },
+                onClick = { /* Conectar a MikroTik */ },
                 modifier = Modifier.fillMaxWidth().height(55.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
@@ -516,6 +512,15 @@ val listaVencidos = listOf(
         mac = "AA:BB:CC:DD:EE:05",
         fecha = "16/07/2026",
         hora = "15:10:00",
+        foto = true
+    ),
+    TicketEstado(
+        codigo = "GHI789",
+        subida = "—",
+        bajada = "—",
+        mac = "AA:BB:CC:DD:EE:06",
+        fecha = "16/07/2026",
+        hora = "14:05:00",
         foto = true
     )
 )

@@ -40,6 +40,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Datos de los puertos con su estado
+data class Puerto(
+    val nombre: String,
+    val activo: Boolean,
+    val tieneInternet: Boolean = true
+)
+
 @Composable
 fun PantallaPrincipal() {
     var routerSeleccionado by remember { mutableStateOf(1) }
@@ -52,13 +59,33 @@ fun PantallaPrincipal() {
     var abrirConfigRouter1 by remember { mutableStateOf(false) }
     var abrirConfigRouter2 by remember { mutableStateOf(false) }
 
+    // Puertos del Router #1 (Balanceador)
+    val puertosRouter1 = listOf(
+        Puerto("WAN", activo = true, tieneInternet = true),
+        Puerto("Puerto 1", activo = true),
+        Puerto("Puerto 2", activo = true),
+        Puerto("Puerto 3", activo = true),
+        Puerto("Puerto 4", activo = true),
+        Puerto("Puerto 5", activo = false)
+    )
+
+    // Puertos del Router #2 (Administración)
+    val puertosRouter2 = listOf(
+        Puerto("WAN", activo = true, tieneInternet = true),
+        Puerto("Puerto 1", activo = true),
+        Puerto("Puerto 2", activo = false),
+        Puerto("Puerto 3", activo = false),
+        Puerto("Puerto 4", activo = false),
+        Puerto("Puerto 5", activo = true)
+    )
+
     val datosRouter = remember(routerSeleccionado) {
         if (routerSeleccionado == 1) {
             mapOf(
                 "nombre" to "📡 Router #1",
                 "modelo" to "RB750Gr3 (Balanceador)",
                 "ip" to "192.168.88.1",
-                "puertos" to "Puertos en uso: 1, 2, 3, 4",
+                "puertosLista" to puertosRouter1,
                 "upload" to "2.4 MB/s",
                 "download" to "8.6 MB/s",
                 "temp" to "38.2 °C",
@@ -70,7 +97,7 @@ fun PantallaPrincipal() {
                 "nombre" to "📡 Router #2",
                 "modelo" to "RB3011 (Administración)",
                 "ip" to "192.168.88.1",
-                "puertos" to "Puertos en uso: 1, 5",
+                "puertosLista" to puertosRouter2,
                 "upload" to "4.8 MB/s",
                 "download" to "15.2 MB/s",
                 "temp" to "42.5 °C",
@@ -175,7 +202,6 @@ fun PantallaPrincipal() {
                     nombre = "📡 Router #1",
                     modelo = "RB750Gr3 (Balanceador)",
                     ip = "192.168.88.1",
-                    puertos = "Puertos en uso: 1, 2, 3, 4",
                     seleccionado = routerSeleccionado == 1,
                     alTocar = { routerSeleccionado = 1 }
                 )
@@ -207,7 +233,6 @@ fun PantallaPrincipal() {
                     nombre = "📡 Router #2",
                     modelo = "RB3011 (Administración)",
                     ip = "192.168.88.1",
-                    puertos = "Puertos en uso: 1, 5",
                     seleccionado = routerSeleccionado == 2,
                     alTocar = { routerSeleccionado = 2 }
                 )
@@ -285,6 +310,71 @@ fun PantallaPrincipal() {
                     fontSize = 14.sp,
                     color = Color.Gray
                 )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = Color(0xFFC8E6C9), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 🔌 SECCIÓN DE PUERTOS CON COLORES
+                Text(
+                    text = "🔌 ESTADO DE PUERTOS",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2E7D32)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val listaPuertos = datosRouter["puertosLista"] as List<Puerto>
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listaPuertos.forEach { puerto ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (puerto.activo) Color(0xFFC8E6C9) else Color(0xFFFFCDD2),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = puerto.nombre,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when {
+                                                puerto.nombre == "WAN" && puerto.tieneInternet -> Color(0xFF22C55E)
+                                                puerto.nombre == "WAN" && !puerto.tieneInternet -> Color(0xFFEF4444)
+                                                puerto.activo -> Color(0xFF22C55E)
+                                                else -> Color(0xFFEF4444)
+                                            }
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when {
+                                        puerto.nombre == "WAN" && puerto.tieneInternet -> "🟢 CONECTADO"
+                                        puerto.nombre == "WAN" && !puerto.tieneInternet -> "🔴 SIN INTERNET"
+                                        puerto.activo -> "🟢 ACTIVO"
+                                        else -> "🔴 DESCONECTADO"
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -390,6 +480,40 @@ fun PantallaPrincipal() {
 }
 
 @Composable
+fun TarjetaRouter(
+    nombre: String,
+    modelo: String,
+    ip: String,
+    seleccionado: Boolean,
+    alTocar: () -> Unit
+) {
+    Card(
+        onClick = alTocar,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
+        ),
+        border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(modelo, fontSize = 13.sp, color = Color(0xFF37474F))
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("IP: $ip", fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
 fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
     var usuario by remember { mutableStateOf("") }
     var contrasena by remember { mutableStateOf("") }
@@ -474,42 +598,6 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
             ) {
                 Text("SALIR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
-        }
-    }
-}
-
-@Composable
-fun TarjetaRouter(
-    nombre: String,
-    modelo: String,
-    ip: String,
-    puertos: String,
-    seleccionado: Boolean,
-    alTocar: () -> Unit
-) {
-    Card(
-        onClick = alTocar,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
-        ),
-        border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(modelo, fontSize = 13.sp, color = Color(0xFF37474F))
-            Spacer(modifier = Modifier.height(6.dp))
-            Text("IP: $ip", fontSize = 12.sp)
-            Text(puertos, fontSize = 12.sp, color = Color(0xFF2E7D32))
         }
     }
 }
@@ -1106,10 +1194,15 @@ fun ListaTicketsVentana(
                 }
             }
 
+            Spacer(modifier = Modifier.height(20.dp
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = onCerrar,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -1130,7 +1223,7 @@ fun HistorialVentana(onCerrar: () -> Unit) {
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("📋 HISTORIAL DE TICKETS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("📋 HISTORIAL COMPLETO", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
 
             Column(
@@ -1143,8 +1236,8 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        shape = RoundedCornerShape(10.dp)
+                            .padding(vertical = 6.dp),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Row(
                             modifier = Modifier
@@ -1158,12 +1251,12 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                                     .clip(CircleShape)
                                     .background(item.colorPunto)
                             )
-                            Spacer(modifier = Modifier.width(14.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Código: ${item.codigo}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Text("📅 ${item.fecha}  ${item.hora}", fontSize = 13.sp, color = Color.Gray)
-                                Text("📶 MAC: ${item.mac}", fontSize = 12.sp, color = Color.Gray)
+                                Text("📶 MAC: ${item.mac}", fontSize = 13.sp, color = Color.Gray)
+                                Text("📅 ${item.fecha}  ${item.hora}", fontSize = 12.sp, color = Color.Gray)
                             }
                         }
                     }
@@ -1173,7 +1266,9 @@ fun HistorialVentana(onCerrar: () -> Unit) {
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = onCerrar,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)

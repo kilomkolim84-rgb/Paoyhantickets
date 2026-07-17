@@ -40,7 +40,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Datos de los puertos con su estado
 data class Puerto(
     val nombre: String,
     val activo: Boolean,
@@ -59,7 +58,6 @@ fun PantallaPrincipal() {
     var abrirConfigRouter1 by remember { mutableStateOf(false) }
     var abrirConfigRouter2 by remember { mutableStateOf(false) }
 
-    // Puertos del Router #1 (Balanceador)
     val puertosRouter1 = listOf(
         Puerto("WAN", activo = true, tieneInternet = true),
         Puerto("Puerto 1", activo = true),
@@ -69,7 +67,6 @@ fun PantallaPrincipal() {
         Puerto("Puerto 5", activo = false)
     )
 
-    // Puertos del Router #2 (Administración)
     val puertosRouter2 = listOf(
         Puerto("WAN", activo = true, tieneInternet = true),
         Puerto("Puerto 1", activo = true),
@@ -315,7 +312,6 @@ fun PantallaPrincipal() {
                 Divider(color = Color(0xFFC8E6C9), thickness = 1.dp)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 🔌 SECCIÓN DE PUERTOS CON COLORES
                 Text(
                     text = "🔌 ESTADO DE PUERTOS",
                     fontSize = 15.sp,
@@ -1192,9 +1188,6 @@ fun ListaTicketsVentana(
                         }
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp
             }
 
             Spacer(modifier = Modifier.height(20.dp))

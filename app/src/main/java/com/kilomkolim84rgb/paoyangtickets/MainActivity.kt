@@ -1220,4 +1220,5 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             }
 
             Row(
-                modifier = Modifier.fill
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spaced

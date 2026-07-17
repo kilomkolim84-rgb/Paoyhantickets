@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import kotlinx.coroutines.delay
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -54,6 +53,7 @@ fun PantallaPrincipal() {
     var abrirConfigRouter1 by remember { mutableStateOf(false) }
     var abrirConfigRouter2 by remember { mutableStateOf(false) }
 
+    // CONTADORES
     val cantActivos = listaActivos.size
     val cantPausados = listaPausados.size
     val cantVencidos = listaVencidos.size
@@ -170,6 +170,7 @@ fun PantallaPrincipal() {
             modifier = Modifier.padding(bottom = 20.dp, top = 16.dp)
         )
 
+        // ROUTER 1 CON ENGRANAJE
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -202,6 +203,7 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // ROUTER 2 CON ENGRANAJE
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -234,8 +236,10 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // CONSUMO CON CPU Y MEMORIA
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
         ) {
@@ -368,6 +372,7 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // TÍTULO + BOTÓN CERRAR (X)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -458,6 +463,7 @@ fun BotonPestanaVentana(
     }
 }
 
+// ===== DATOS =====
 val listaActivos = listOf(
     TicketEstado(
         codigo = "0MXLC6",
@@ -521,6 +527,7 @@ val listaVencidos = listOf(
     )
 )
 
+// ===== HISTORIAL — SOLO PUNTO DE COLOR, SIN TEXTO =====
 val listaHistorial = listOf(
     HistorialItem("0MXLC6", "16/07/2026", "18:50:00", "AA:BB:CC:DD:EE:01", Color(0xFF22C55E)),
     HistorialItem("LSJBHM", "16/07/2026", "18:45:00", "AA:BB:CC:DD:EE:02", Color(0xFF22C55E)),
@@ -689,6 +696,7 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // SOLO EL PUNTO DE COLOR — SIN TEXTO
                             Box(
                                 modifier = Modifier
                                     .size(16.dp)
@@ -777,12 +785,6 @@ data class Ticket(
     val fechaHora: String,
     val estado: String = "✅ Activo"
 )
-
-sealed class EstadoCreacion {
-    object Idle : EstadoCreacion()
-    data class Creando(var progreso: Float = 0f) : EstadoCreacion()
-    object Terminado : EstadoCreacion()
-}
 
 fun generarQR(texto: String, tamano: Int = 300): Bitmap {
     val escritor = QRCodeWriter()
@@ -939,8 +941,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     val listaValores = listOf(
         "S/ 0.50", "S/ 1.00", "S/ 2.00", "S/ 3.00", "S/ 4.00", "S/ 5.00",
         "S/ 8.00", "S/ 10.00", "S/ 20.00", "S/ 30.00", "S/ 40.00", "S/ 50.00",
-        "S/ 60.00", "S/ 70.00", "S/ 80.00", "S/ 90.00", "S/ 100.00",
-        "S/ 200.00", "S/ 500.00", "S/ 1000.00"
+        "S/ 60.00", "S/ 70.00", "S/ 80.00", "S/ 90.00", "S/ 100.00"
     )
 
     val listaTiempos = listOf(
@@ -989,7 +990,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             val total = cantidadSeleccion.toInt()
             for (i in 1..total) {
                 (estadoCreacion as? EstadoCreacion.Creando)?.progreso = i.toFloat() / total.toFloat()
-                delay(30)
+                kotlinx.coroutines.delay(30)
             }
             val fechaHora = obtenerFechaHora()
             repeat(cantidadSeleccion.toInt()) {
@@ -1221,4 +1222,26 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spaced
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (estadoCreacion is EstadoCreacion.Idle) {
+                    Button(
+                         onClick = {
+                             estadoCreacion = EstadoCreacion.Idle
+                             onCerrar()
+                         },
+                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                         modifier = Modifier.fillMaxWidth()
+                     ) {
+                         Text("ACEPTAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                     }
+                 }
+             }
+         }
+     }
+ }
+ sealed class EstadoCreacion {
+     object Idle : EstadoCreacion()
+     data class Creando(var progreso: Float) : EstadoCreacion()
+     object Terminado : EstadoCreacion()
+ }

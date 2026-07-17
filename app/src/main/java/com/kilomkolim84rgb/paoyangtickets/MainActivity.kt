@@ -248,7 +248,6 @@ fun PantallaPrincipal() {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // PRIMERA FILA: Subida y Bajada
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
@@ -265,7 +264,6 @@ fun PantallaPrincipal() {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // SEGUNDA FILA: CPU y RAM
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
@@ -282,7 +280,6 @@ fun PantallaPrincipal() {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // TERCERA FILA: Temperatura
                 Text(
                     "🌡️ Temperatura: ${datosRouter["temp"]}",
                     fontSize = 14.sp,
@@ -319,7 +316,7 @@ fun PantallaPrincipal() {
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
         ) {
             Text(
-                text = "📋 TICKETS CREADOS",
+                text = "📋 TICKETS CREADOS (${listaTickets.size})",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -334,7 +331,14 @@ fun PantallaPrincipal() {
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
             ) {
-                Text("🟢 ACTIVOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("ACTIVOS (${listaActivos.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { abrirPausados = true },
@@ -342,7 +346,14 @@ fun PantallaPrincipal() {
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
             ) {
-                Text("🟡 PAUSADOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("PAUSADOS (${listaPausados.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -355,7 +366,14 @@ fun PantallaPrincipal() {
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
             ) {
-                Text("🔴 VENCIDOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("VENCIDOS (${listaVencidos.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Button(
                 onClick = { abrirHistorial = true },

@@ -283,6 +283,7 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // ========== BOTONES IGUALES A LA IMAGEN ==========
         Button(
             onClick = { abrirCrearTicket = true },
             modifier = Modifier
@@ -315,33 +316,45 @@ fun PantallaPrincipal() {
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        Column {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BotonPestanaVentana(
-                    texto = "🟢 ACTIVOS",
-                    color = Color(0xFF22C55E),
-                    modifier = Modifier.weight(1f)
-                ) { abrirActivos = true }
-                BotonPestanaVentana(
-                    texto = "🟡 PAUSADOS",
-                    color = Color(0xFFF59E0B),
-                    modifier = Modifier.weight(1f)
-                ) { abrirPausados = true }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { abrirActivos = true },
+                modifier = Modifier.weight(1f).height(65.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
+            ) {
+                Text("🟢 ACTIVOS", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BotonPestanaVentana(
-                    texto = "🔴 VENCIDOS",
-                    color = Color(0xFFEF4444),
-                    modifier = Modifier.weight(1f)
-                ) { abrirVencidos = true }
-                BotonPestanaVentana(
-                    texto = "📋 HISTORIAL",
-                    color = Color(0xFF6366F1),
-                    modifier = Modifier.weight(1f)
-                ) { abrirHistorial = true }
+            Button(
+                onClick = { abrirPausados = true },
+                modifier = Modifier.weight(1f).height(65.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+            ) {
+                Text("🟡 PAUSADOS", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { abrirVencidos = true },
+                modifier = Modifier.weight(1f).height(65.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+            ) {
+                Text("🔴 VENCIDOS", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Button(
+                onClick = { abrirHistorial = true },
+                modifier = Modifier.weight(1f).height(65.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+            ) {
+                Text("📋 HISTORIAL", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -436,23 +449,6 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
     }
 }
 
-@Composable
-fun BotonPestanaVentana(
-    texto: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-    alTocar: () -> Unit
-) {
-    Button(
-        onClick = alTocar,
-        modifier = modifier.height(60.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = color)
-    ) {
-        Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = Color.White)
-    }
-}
-
 val listaActivos = listOf(
     TicketEstado(
         codigo = "0MXLC6",
@@ -471,15 +467,6 @@ val listaActivos = listOf(
         fecha = "16/07/2026",
         hora = "18:45:00",
         foto = true
-    ),
-    TicketEstado(
-        codigo = "XYZ789",
-        subida = "3.2 MB/s",
-        bajada = "9.5 MB/s",
-        mac = "AA:BB:CC:DD:EE:07",
-        fecha = "16/07/2026",
-        hora = "18:30:00",
-        foto = true
     )
 )
 
@@ -491,15 +478,6 @@ val listaPausados = listOf(
         mac = "AA:BB:CC:DD:EE:03",
         fecha = "16/07/2026",
         hora = "17:30:00",
-        foto = true
-    ),
-    TicketEstado(
-        codigo = "ABC123",
-        subida = "—",
-        bajada = "—",
-        mac = "AA:BB:CC:DD:EE:04",
-        fecha = "16/07/2026",
-        hora = "16:20:00",
         foto = true
     )
 )
@@ -513,15 +491,6 @@ val listaVencidos = listOf(
         fecha = "16/07/2026",
         hora = "15:10:00",
         foto = true
-    ),
-    TicketEstado(
-        codigo = "GHI789",
-        subida = "—",
-        bajada = "—",
-        mac = "AA:BB:CC:DD:EE:06",
-        fecha = "16/07/2026",
-        hora = "14:05:00",
-        foto = true
     )
 )
 
@@ -529,9 +498,7 @@ val listaHistorial = listOf(
     HistorialItem("0MXLC6", "16/07/2026", "18:50:00", "AA:BB:CC:DD:EE:01", Color(0xFF22C55E)),
     HistorialItem("LSJBHM", "16/07/2026", "18:45:00", "AA:BB:CC:DD:EE:02", Color(0xFF22C55E)),
     HistorialItem("0DUUHT", "16/07/2026", "17:30:00", "AA:BB:CC:DD:EE:03", Color(0xFFF59E0B)),
-    HistorialItem("ABC123", "16/07/2026", "16:20:00", "AA:BB:CC:DD:EE:04", Color(0xFFF59E0B)),
-    HistorialItem("DEF456", "16/07/2026", "15:10:00", "AA:BB:CC:DD:EE:05", Color(0xFFEF4444)),
-    HistorialItem("GHI789", "16/07/2026", "14:05:00", "AA:BB:CC:DD:EE:06", Color(0xFFEF4444))
+    HistorialItem("DEF456", "16/07/2026", "15:10:00", "AA:BB:CC:DD:EE:05", Color(0xFFEF4444))
 )
 
 data class TicketEstado(

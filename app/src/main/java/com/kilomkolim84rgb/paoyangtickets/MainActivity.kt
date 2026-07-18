@@ -10,11 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import kotlin.random.Random
+import java.util.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,6 +41,58 @@ data class Puerto(
     val activo: Boolean,
     val tieneInternet: Boolean = true
 )
+
+data class Ticket(
+    val codigo: String,
+    val tipo: String,
+    val valor: Double,
+    val fecha: String,
+    val hora: String,
+    val estado: String
+)
+
+val listaTickets = mutableStateListOf<Ticket>()
+val listaActivos = mutableStateListOf(
+    Ticket("A1B2C3", "LETRAS", 2.00, "17/07/2026", "18:30", "activo"),
+    Ticket("XYZ789", "MIXTO", 5.00, "17/07/2026", "17:15", "activo")
+)
+val listaPausados = mutableStateListOf(
+    Ticket("DEF456", "NUMEROS", 1.00, "17/07/2026", "16:00", "pausado")
+)
+val listaVencidos = mutableStateListOf(
+    Ticket("ABC123", "LETRAS", 0.50, "16/07/2026", "14:30", "vencido")
+)
+
+fun generarCodigoTicket(tipo: String, digitos: Int): String {
+    val caracteres = when (tipo) {
+        "SOLO LETRAS" -> "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "SOLO NÚMEROS" -> "0123456789"
+        else -> "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    }
+    return (1..digitos).map { caracteres.random() }.joinToString("")
+}
+
+fun generarQR(codigo: String): Bitmap? {
+    return try {
+        val bitMatrix = QRCodeWriter().encode(
+            codigo,
+            BarcodeFormat.QR_CODE,
+            512,
+            512
+        )
+        val ancho = bitMatrix.width
+        val alto = bitMatrix.height
+        val bitmap = Bitmap.createBitmap(ancho, alto, Bitmap.Config.RGB_565)
+        for (x in 0 until ancho) {
+            for (y in 0 until alto) {
+                bitmap.setPixel(x, y, if (bitMatrix[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
+            }
+        }
+        bitmap
+    } catch (e: Exception) {
+        null
+    }
+}
 
 @Composable
 fun PantallaPrincipal() {
@@ -470,7 +518,7 @@ fun PantallaPrincipal() {
                 Text("📋 HISTORIAL", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
-        
+
         Spacer(modifier = Modifier.height(20.dp))
     }
 }
@@ -522,11 +570,74 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = titulo,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            OutlinedTextField(
+                value = usuario,
+                onValueChange = { usuario = it },
+                label = { Text("Usuario") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = contrasena,
+                onValueChange = { contrasena = it },
+                label = { Text("Contraseña") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = puerto,
+                onValueChange = { puerto = it },
+                label = { Text("Puerto") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = onCerrar,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("CANCELAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onCerrar,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
+                ) {
+                    Text("CONECTAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
 @Composable
-fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
-    var usuario by remember { mutableStateOf("") }
-    var contrasena by remember { mutableStateOf("") }
-    var puerto by remember { mutableStateOf("8728") }
+fun CrearTicketVentana(onCerrar: () -> Unit) {
+    var tipoCodigo by remember { mutableStateOf("LETRAS Y NÚMEROS") }
+    var cantidadDigitos by remember { mutableStateOf(6) }
+    var valorSeleccionado by remember { mutableStateOf(1.00) }
+    var codigoGenerado by remember { mutableStateOf("") }
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     Card(
         modifier = Modifier
@@ -535,3 +646,310 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("🎫 CREAR NUEVO TICKET", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+
+            Text("TIPO DE CÓDIGO", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("LETRAS", "NÚMEROS", "LETRAS Y NÚMEROS").forEach { tipo ->
+                    Button(
+                        onClick = { tipoCodigo = tipo },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (tipoCodigo == tipo) Color(0xFF2563EB) else Color(0xFFE0E0E0)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(tipo, fontSize = 12.sp, color = if (tipoCodigo == tipo) Color.White else Color.Black)
+                    }
+                }
+            }
+
+            Text("CANTIDAD DE DÍGITOS: $cantidadDigitos", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(5, 6).forEach { dig ->
+                    Button(
+                        onClick = { cantidadDigitos = dig },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (cantidadDigitos == dig) Color(0xFF2563EB) else Color(0xFFE0E0E0)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("$dig", fontSize = 14.sp, color = if (cantidadDigitos == dig) Color.White else Color.Black)
+                    }
+                }
+            }
+
+            Text("VALOR DEL TICKET", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            val valores = listOf(0.50, 1.00, 2.00, 3.00, 4.00, 5.00, 8.00, 10.00, 20.00, 50.00, 100.00)
+            valores.chunked(4).forEach { fila ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    fila.forEach { valor ->
+                        Button(
+                            onClick = { valorSeleccionado = valor },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (valorSeleccionado == valor) Color(0xFF22C55E) else Color(0xFFE8F5E9)
+                            ),
+                            modifier = Modifier.weight(1f).height(45.dp)
+                        ) {
+                            Text("S/ $valor", fontSize = 12.sp, color = if (valorSeleccionado == valor) Color.White else Color.Black)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    codigoGenerado = generarCodigoTicket(tipoCodigo, cantidadDigitos)
+                    qrBitmap = generarQR(codigoGenerado)
+                    val fecha = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+                    val hora = java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                    val nuevo = Ticket(codigoGenerado, tipoCodigo, valorSeleccionado, fecha, hora, "activo")
+                    listaTickets.add(nuevo)
+                    listaActivos.add(nuevo)
+                },
+                modifier = Modifier.fillMaxWidth().height(55.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+            ) {
+                Text("✅ GENERAR TICKET", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+
+            if (codigoGenerado.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("CÓDIGO: $codigoGenerado", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Valor: S/ $valorSeleccionado", fontSize = 16.sp)
+                        qrBitmap?.let { bitmap ->
+                            Spacer(modifier = Modifier.height(12.dp))
+                            androidx.compose.foundation.Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "QR",
+                                modifier = Modifier.size(180.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun TicketsCreadosVentana(onCerrar: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text("📋 TICKETS CREADOS", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (listaTickets.isEmpty()) {
+                Text("No hay tickets creados", fontSize = 16.sp, color = Color.Gray)
+            } else {
+                listaTickets.forEach { ticket ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (ticket.estado) {
+                                "activo" -> Color(0xFFC8E6C9)
+                                "pausado" -> Color(0xFFFFE0B2)
+                                else -> Color(0xFFFFCDD2)
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(ticket.codigo, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text("S/ ${ticket.valor} — ${ticket.fecha} ${ticket.hora}", fontSize = 14.sp)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when (ticket.estado) {
+                                            "activo" -> Color(0xFF22C55E)
+                                            "pausado" -> Color(0xFFF59E0B)
+                                            else -> Color(0xFFEF4444)
+                                        }
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun ListaTicketsVentana(
+    titulo: String,
+    puntoColor: Color,
+    tickets: List<Ticket>,
+    onCerrar: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(titulo, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (tickets.isEmpty()) {
+                Text("No hay tickets en esta lista", fontSize = 16.sp, color = Color.Gray)
+            } else {
+                tickets.forEach { ticket ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(ticket.codigo, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text("S/ ${ticket.valor} — ${ticket.fecha} ${ticket.hora}", fontSize = 14.sp)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(puntoColor)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = puntoColor)
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+fun HistorialVentana(onCerrar: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text("📋 HISTORIAL COMPLETO", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val todos = listaActivos + listaPausados + listaVencidos
+            if (todos.isEmpty()) {
+                Text("No hay registros", fontSize = 16.sp, color = Color.Gray)
+            } else {
+                todos.forEach { ticket ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(ticket.codigo, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Text("${ticket.fecha} ${ticket.hora}", fontSize = 14.sp, color = Color.Gray)
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when (ticket.estado) {
+                                        "activo" -> Color(0xFF22C55E)
+                                        "pausado" -> Color(0xFFF59E0B)
+                                        else -> Color(0xFFEF4444)
+                                    }
+                                )
+                        )
+                    }
+                    Divider()
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}

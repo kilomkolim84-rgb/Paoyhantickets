@@ -1,358 +1,524 @@
 package com.kilomkolim84rgb.paoyangtickets
 
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import kotlin.random.Random
 
-// Datos vacíos por defecto — se llenan al conectar MikroTik
-data class RouterEstado(
-    val ip: String = "---",
-    val cpu: String = "--",
-    val ram: String = "--",
-    val temperatura: String = "--",
-    val interfaces: List<InterfaceDatos> = emptyList(),
-    val conectado: Boolean = false
-)
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            PantallaPrincipal()
+        }
+    }
+}
 
-data class InterfaceDatos(
-    val nombre: String = "",
-    val download: String = "0",
-    val upload: String = "0"
+data class Puerto(
+    val nombre: String,
+    val activo: Boolean,
+    val tieneInternet: Boolean = true
 )
 
 @Composable
-fun PantallaMonitoreoMikrotik() {
-    // Estado — VACÍO hasta que se conecte el MikroTik
-    val router1 = remember { mutableStateOf(RouterEstado()) }
-    val router2 = remember { mutableStateOf(RouterEstado()) }
-    val routerActivo = remember { mutableStateOf(2) }
+fun PantallaPrincipal() {
+    var routerSeleccionado by remember { mutableStateOf(1) }
+    var abrirCrearTicket by remember { mutableStateOf(false) }
+    var abrirTicketsCreados by remember { mutableStateOf(false) }
+    var abrirActivos by remember { mutableStateOf(false) }
+    var abrirPausados by remember { mutableStateOf(false) }
+    var abrirVencidos by remember { mutableStateOf(false) }
+    var abrirHistorial by remember { mutableStateOf(false) }
+    var abrirConfigRouter1 by remember { mutableStateOf(false) }
+    var abrirConfigRouter2 by remember { mutableStateOf(false) }
+
+    val puertosRouter1 = listOf(
+        Puerto("WAN", activo = true, tieneInternet = true),
+        Puerto("Puerto 1", activo = true),
+        Puerto("Puerto 2", activo = true),
+        Puerto("Puerto 3", activo = true),
+        Puerto("Puerto 4", activo = true),
+        Puerto("Puerto 5", activo = false)
+    )
+
+    val puertosRouter2 = listOf(
+        Puerto("WAN", activo = true, tieneInternet = true),
+        Puerto("Puerto 1", activo = true),
+        Puerto("Puerto 2", activo = false),
+        Puerto("Puerto 3", activo = false),
+        Puerto("Puerto 4", activo = false),
+        Puerto("Puerto 5", activo = true)
+    )
+
+    val datosRouter = remember(routerSeleccionado) {
+        if (routerSeleccionado == 1) {
+            mapOf(
+                "nombre" to "📡 Router #1",
+                "modelo" to "RB750Gr3 (Balanceador)",
+                "ip" to "192.168.88.1",
+                "puertosLista" to puertosRouter1,
+                "upload" to "2.4 MB/s",
+                "download" to "8.6 MB/s",
+                "temp" to "38.2 °C",
+                "cpu" to "23%",
+                "ram" to "47%"
+            )
+        } else {
+            mapOf(
+                "nombre" to "📡 Router #2",
+                "modelo" to "RB3011 (Administración)",
+                "ip" to "192.168.88.1",
+                "puertosLista" to puertosRouter2,
+                "upload" to "4.8 MB/s",
+                "download" to "15.2 MB/s",
+                "temp" to "42.5 °C",
+                "cpu" to "18%",
+                "ram" to "35%"
+            )
+        }
+    }
+
+    if (abrirConfigRouter1) {
+        Dialog(onDismissRequest = { abrirConfigRouter1 = false }) {
+            VentanaConfiguracionRouter(
+                titulo = "⚙️ Router #1 — RB750Gr3",
+                onCerrar = { abrirConfigRouter1 = false }
+            )
+        }
+    }
+
+    if (abrirConfigRouter2) {
+        Dialog(onDismissRequest = { abrirConfigRouter2 = false }) {
+            VentanaConfiguracionRouter(
+                titulo = "⚙️ Router #2 — RB3011",
+                onCerrar = { abrirConfigRouter2 = false }
+            )
+        }
+    }
+
+    if (abrirCrearTicket) {
+        Dialog(onDismissRequest = { abrirCrearTicket = false }) {
+            CrearTicketVentana(onCerrar = { abrirCrearTicket = false })
+        }
+    }
+
+    if (abrirTicketsCreados) {
+        Dialog(onDismissRequest = { abrirTicketsCreados = false }) {
+            TicketsCreadosVentana(onCerrar = { abrirTicketsCreados = false })
+        }
+    }
+
+    if (abrirActivos) {
+        Dialog(onDismissRequest = { abrirActivos = false }) {
+            ListaTicketsVentana(
+                titulo = "🟢 TICKETS ACTIVOS",
+                puntoColor = Color(0xFF22C55E),
+                tickets = listaActivos,
+                onCerrar = { abrirActivos = false }
+            )
+        }
+    }
+
+    if (abrirPausados) {
+        Dialog(onDismissRequest = { abrirPausados = false }) {
+            ListaTicketsVentana(
+                titulo = "🟡 TICKETS PAUSADOS",
+                puntoColor = Color(0xFFF59E0B),
+                tickets = listaPausados,
+                onCerrar = { abrirPausados = false }
+            )
+        }
+    }
+
+    if (abrirVencidos) {
+        Dialog(onDismissRequest = { abrirVencidos = false }) {
+            ListaTicketsVentana(
+                titulo = "🔴 TICKETS VENCIDOS",
+                puntoColor = Color(0xFFEF4444),
+                tickets = listaVencidos,
+                onCerrar = { abrirVencidos = false }
+            )
+        }
+    }
+
+    if (abrirHistorial) {
+        Dialog(onDismissRequest = { abrirHistorial = false }) {
+            HistorialVentana(onCerrar = { abrirHistorial = false })
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF5F5F5))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "PaoyangTickets",
+            text = "🎟️ PAOYANG TICKETS",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.Black,
-            modifier = Modifier.padding(bottom = 8.dp)
+            color = Color(0xFF2C3E50),
+            modifier = Modifier.padding(bottom = 16.dp, top = 16.dp)
         )
 
-        // ===== ROUTER #1 — RB750Gr3 (Balanceador) =====
-        Card(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(if (routerActivo.value == 1) Color(0xFFE3F2FD) else Color.White),
-            border = if (routerActivo.value == 1) BorderStroke(3.dp, Color(0xFF2196F3)) else null,
-            onClick = { routerActivo.value = 1 }
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            Box(modifier = Modifier.weight(1f)) {
+                TarjetaRouter(
+                    nombre = "📡 Router #1",
+                    modelo = "RB750Gr3 (Balanceador)",
+                    ip = "192.168.88.1",
+                    seleccionado = routerSeleccionado == 1,
+                    alTocar = { routerSeleccionado = 1 }
+                )
+            }
+            IconButton(
+                onClick = { abrirConfigRouter1 = true },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .size(36.dp)
+                    .background(Color(0xFFE0E0E0), CircleShape)
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("📡 Router #1", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text("RB750Gr3 (Balanceador)", fontSize = 16.sp, color = Color.DarkGray)
-                    Text("IP: ${router1.value.ip}", fontSize = 15.sp, color = Color.Gray)
-                }
-                Button(
-                    onClick = { /* Configurar IP, Puerto, Contraseña */ },
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(Color(0xFFE0E0E0))
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = "Configurar", tint = Color.Black)
-                }
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Configuración",
+                    tint = Color(0xFF37474F),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
 
-        // ===== ROUTER #2 — RB3011 (Administración) =====
-        Card(
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(if (routerActivo.value == 2) Color(0xFFE3F2FD) else Color.White),
-            border = if (routerActivo.value == 2) BorderStroke(3.dp, Color(0xFF2196F3)) else null,
-            onClick = { routerActivo.value = 2 }
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("📡 Router #2", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text("RB3011 (Administración)", fontSize = 16.sp, color = Color.DarkGray)
-                    Text("IP: ${router2.value.ip}", fontSize = 15.sp, color = Color.Gray)
-                }
-                Button(
-                    onClick = { /* Configurar IP, Puerto, Contraseña */ },
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(Color(0xFFE0E0E0))
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = "Configurar", tint = Color.Black)
-                }
+            Box(modifier = Modifier.weight(1f)) {
+                TarjetaRouter(
+                    nombre = "📡 Router #2",
+                    modelo = "RB3011 (Administración)",
+                    ip = "192.168.88.1",
+                    seleccionado = routerSeleccionado == 2,
+                    alTocar = { routerSeleccionado = 2 }
+                )
             }
-        }
-
-        // ===== CONSUMO DE INTERNET — UN SOLO RECUADRO VERDE =====
-        val datos = if (routerActivo.value == 1) router1.value else router2.value
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(Color(0xFFE8F5E9))
-        ) {
-            Column(
+            IconButton(
+                onClick = { abrirConfigRouter2 = true },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
+                    .size(36.dp)
+                    .background(Color(0xFFE0E0E0), CircleShape)
             ) {
-                Text(
-                    text = "📊 Consumo de Internet — 📡 Router #${routerActivo.value}",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32),
-                    modifier = Modifier.padding(bottom = 16.dp)
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Configuración",
+                    tint = Color(0xFF37474F),
+                    modifier = Modifier.size(20.dp)
                 )
-
-                // CPU, RAM, TEMPERATURA — VACÍO SI NO HAY CONEXIÓN
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("💻 CPU", fontSize = 16.sp, color = Color.Gray)
-                        Text("${datos.cpu}%", fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                            color = if (datos.cpu == "--") Color.Gray else Color(0xFFE65100))
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("🧠 MEMORIA RAM", fontSize = 16.sp, color = Color.Gray)
-                        Text("${datos.ram}%", fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                            color = if (datos.ram == "--") Color.Gray else Color(0xFF303F9F))
-                    }
-                }
-
-                Text(
-                    text = "🌡️ Temperatura: ${datos.temperatura} °C",
-                    fontSize = 16.sp,
-                    color = Color.Gray,
-                    modifier = Modifier
-                        .padding(top = 12.dp, bottom = 16.dp)
-                        .align(Alignment.CenterHorizontally)
-                )
-
-                Divider(color = Color(0xFF2196F3), thickness = 2.dp, modifier = Modifier.padding(bottom = 16.dp))
-
-                // ===== SECCIÓN INTERNET =====
-                Text(
-                    text = "Internet",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black
-                )
-
-                if (!datos.conectado) {
-                    Text(
-                        text = "No disponible",
-                        fontSize = 18.sp,
-                        color = Color.Red,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                    )
-                    Text(
-                        text = "Sin puertos conectados",
-                        fontSize = 16.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                } else {
-                    Text(
-                        text = "Disponible en: ${datos.interfaces.joinToString { it.nombre }}",
-                        fontSize = 18.sp,
-                        color = Color(0xFF2E7D32),
-                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                    )
-                    Text(
-                        text = "IP: ${datos.ip}",
-                        fontSize = 16.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                }
-
-                // ===== TABLA DE INTERFACES =====
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFC8E6C9), RoundedCornerShape(8.dp))
-                        .padding(12.dp)
-                ) {
-                    Text(text = "Interface", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    Text(text = "⬇ Download", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    Text(text = "⬆ Upload", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                }
-
-                if (datos.interfaces.isEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceAround
-                    ) {
-                        Text(text = "--", fontSize = 16.sp, color = Color.Gray, modifier = Modifier.weight(1f))
-                        Text(text = "-- Kbps", fontSize = 16.sp, color = Color.Gray, modifier = Modifier.weight(1f))
-                        Text(text = "-- Kbps", fontSize = 16.sp, color = Color.Gray, modifier = Modifier.weight(1f))
-                    }
-                } else {
-                    datos.interfaces.forEach { interfaz ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Text(text = interfaz.nombre, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                            Text(text = "${interfaz.download} Kbps", fontSize = 16.sp, modifier = Modifier.weight(1f))
-                            Text(text = "${interfaz.upload} Kbps", fontSize = 16.sp, modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-                // ===== GRÁFICO DE TRÁFICO =====
-                Text(
-                    text = "ether1  Download: -- kbps  Upload: -- kbps",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                // GRÁFICO VACÍO — LÍNEAS EN EL SUELO (0)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp)
-                        .background(Color.White, RoundedCornerShape(8.dp))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.Bottom
-                    ) {
-                        // Línea AZUL (Tx) en el suelo
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .background(Color(0xFF2196F3))
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        // Línea ROJA (Rx) en el suelo
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .background(Color(0xFFF44336))
-                        )
-                    }
-                    Text(
-                        text = "0 bps",
-                        fontSize = 12.sp,
-                        color = Color.Gray,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 8.dp, bottom = 4.dp)
-                    )
-                }
-
-                Row(modifier = Modifier.padding(top = 8.dp)) {
-                    Text("🔵 Tx", fontSize = 14.sp)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text("🔴 Rx", fontSize = 14.sp)
-                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ===== BOTONES =====
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "📊 Consumo de Internet — ${datosRouter["nombre"]}",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2E7D32)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("⬆️ SUBIDA", fontSize = 13.sp, color = Color.Gray)
+                        Text("${datosRouter["upload"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("⬇️ BAJADA", fontSize = 13.sp, color = Color.Gray)
+                        Text("${datosRouter["download"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("💻 CPU", fontSize = 13.sp, color = Color.Gray)
+                        Text("${datosRouter["cpu"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🧠 MEMORIA RAM", fontSize = 13.sp, color = Color.Gray)
+                        Text("${datosRouter["ram"]}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF283593))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    "🌡️ Temperatura: ${datosRouter["temp"]}",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = Color(0xFFC8E6C9), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "🔌 ESTADO DE PUERTOS",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2E7D32)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val listaPuertos = datosRouter["puertosLista"] as List<Puerto>
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listaPuertos.forEach { puerto ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (puerto.activo) Color(0xFFC8E6C9) else Color(0xFFFFCDD2),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = puerto.nombre,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when {
+                                                puerto.nombre == "WAN" && puerto.tieneInternet -> Color(0xFF22C55E)
+                                                puerto.nombre == "WAN" && !puerto.tieneInternet -> Color(0xFFEF4444)
+                                                puerto.activo -> Color(0xFF22C55E)
+                                                else -> Color(0xFFEF4444)
+                                            }
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when {
+                                        puerto.nombre == "WAN" && puerto.tieneInternet -> "🟢 CONECTADO"
+                                        puerto.nombre == "WAN" && !puerto.tieneInternet -> "🔴 SIN INTERNET"
+                                        puerto.activo -> "🟢 ACTIVO"
+                                        else -> "🔴 DESCONECTADO"
+                                    },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
         Button(
-            onClick = { /* Crear Ticket */ },
+            onClick = { abrirCrearTicket = true },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(65.dp),
-            colors = ButtonDefaults.buttonColors(Color(0xFF2962FF)),
-            shape = RoundedCornerShape(12.dp)
+                .height(60.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
         ) {
-            Text("🎟️ CREAR NUEVO TICKET", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "🎫 CREAR NUEVO TICKET",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         Button(
-            onClick = { /* Tickets Creados */ },
+            onClick = { abrirTicketsCreados = true },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(65.dp),
-            colors = ButtonDefaults.buttonColors(Color(0xFF5C6BC0)),
-            shape = RoundedCornerShape(12.dp)
+                .height(55.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
         ) {
-            Text("📋 TICKETS CREADOS (0)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "📋 TICKETS CREADOS (${listaTickets.size})",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
-                onClick = { /* Activos */ },
-                modifier = Modifier.weight(1f).height(65.dp),
-                colors = ButtonDefaults.buttonColors(Color(0xFF4CAF50)),
-                shape = RoundedCornerShape(12.dp)
+                onClick = { abrirActivos = true },
+                modifier = Modifier.weight(1f).height(55.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
             ) {
-                Text("● ACTIVOS (2)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("ACTIVOS (${listaActivos.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Button(
-                onClick = { /* Pausados */ },
-                modifier = Modifier.weight(1f).height(65.dp),
-                colors = ButtonDefaults.buttonColors(Color(0xFFFF9800)),
-                shape = RoundedCornerShape(12.dp)
+                onClick = { abrirPausados = true },
+                modifier = Modifier.weight(1f).height(55.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
             ) {
-                Text("● PAUSADOS (1)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("PAUSADOS (${listaPausados.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
-                onClick = { /* Vencidos */ },
-                modifier = Modifier.weight(1f).height(65.dp),
-                colors = ButtonDefaults.buttonColors(Color(0xFFE53935)),
-                shape = RoundedCornerShape(12.dp)
+                onClick = { abrirVencidos = true },
+                modifier = Modifier.weight(1f).height(55.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
             ) {
-                Text("● VENCIDOS (1)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("VENCIDOS (${listaVencidos.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Button(
-                onClick = { /* Historial */ },
-                modifier = Modifier.weight(1f).height(65.dp),
-                colors = ButtonDefaults.buttonColors(Color(0xFF5C6BC0)),
-                shape = RoundedCornerShape(12.dp)
+                onClick = { abrirHistorial = true },
+                modifier = Modifier.weight(1f).height(55.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
             ) {
-                Text("📋 HISTORIAL", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("📋 HISTORIAL", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+    }
+}
+
+@Composable
+fun TarjetaRouter(
+    nombre: String,
+    modelo: String,
+    ip: String,
+    seleccionado: Boolean,
+    alTocar: () -> Unit
+) {
+    Card(
+        onClick = alTocar,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
+        ),
+        border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(modelo, fontSize = 13.sp, color = Color(0xFF37474F))
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("IP: $ip", fontSize = 12.sp)
         }
     }
 }
+
+@Composable
+fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
+    var usuario by remember { mutableStateOf("") }
+    var contrasena by remember { mutableStateOf("") }
+    var puerto by remember { mutableStateOf("8728") }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(

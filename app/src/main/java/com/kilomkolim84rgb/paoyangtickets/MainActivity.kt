@@ -522,3 +522,16 @@ fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
+@Composable
+fun VentanaConfiguracionRouter(titulo: String, onCerrar: () -> Unit) {
+    var usuario by remember { mutableStateOf("") }
+    var contrasena by remember { mutableStateOf("") }
+    var puerto by remember { mutableStateOf("8728") }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(

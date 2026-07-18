@@ -46,7 +46,7 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
 
     // ✅ CONEXIÓN REAL AL MIKROTIK
-    implementation 'io.github.mmilet:mikrotik-api:1.3'
+    implementation 'com.mikrotik:mikrotikapi:2.0.2'
 
     // ✅ LIBRERÍA DE QR
     implementation "com.google.zxing:core:3.5.1"

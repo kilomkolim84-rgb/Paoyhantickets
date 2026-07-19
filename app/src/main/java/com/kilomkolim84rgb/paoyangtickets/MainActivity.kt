@@ -22,8 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.google.firebase.database.FirebaseDatabase
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.delay
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -33,6 +35,37 @@ class MainActivity : ComponentActivity() {
             PantallaPrincipal()
         }
     }
+}
+
+// ✅ GUARDAR TICKET EN FIREBASE
+fun guardarTicketEnFirebase(ticket: Ticket) {
+    val db = FirebaseDatabase.getInstance().reference
+    val datosTicket = hashMapOf(
+        "codigo" to ticket.codigo,
+        "tiempo" to ticket.tiempo,
+        "valor" to ticket.valor,
+        "tipoTiempo" to ticket.tipoTiempo,
+        "estado" to "PENDIENTE",
+        "perfil" to when (ticket.tiempo) {
+            "30 Minutos" -> "30min"
+            "1 Hora" -> "1hora"
+            "2 Horas" -> "2horas"
+            "3 Horas" -> "3horas"
+            "4 Horas" -> "4horas"
+            "5 Horas" -> "5horas"
+            "8 Horas" -> "8horas"
+            "10 Horas" -> "10horas"
+            "12 Horas" -> "12horas"
+            "1 Día" -> "1dia"
+            "7 Días" -> "7dias"
+            "15 Días" -> "15dias"
+            "30 Días" -> "30dias"
+            else -> "1hora"
+        },
+        "fechaCreacion" to System.currentTimeMillis()
+    )
+    
+    db.child("tickets").child(ticket.codigo).setValue(datosTicket)
 }
 
 @Composable
@@ -477,21 +510,21 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
         }
     }
 
-    // ✅ CREA 1 POR 1 — SIN TRABARSE
+    // ✅ CREA 1 POR 1 Y GUARDA EN FIREBASE
     LaunchedEffect(estadoCreacion) {
         if (estadoCreacion is EstadoCreacion.Creando) {
             val total = cantidadSeleccion.toInt()
             for (i in 1..total) {
                 (estadoCreacion as? EstadoCreacion.Creando)?.progreso = i.toFloat() / total.toFloat()
-                listaTickets.add(
-                    Ticket(
-                        codigo = generarCodigo(),
-                        tiempo = tiempoSeleccion,
-                        valor = valorSeleccion,
-                        tipoTiempo = tipoTiempoSeleccion
-                    )
+                val nuevoTicket = Ticket(
+                    codigo = generarCodigo(),
+                    tiempo = tiempoSeleccion,
+                    valor = valorSeleccion,
+                    tipoTiempo = tipoTiempoSeleccion
                 )
-                kotlinx.coroutines.delay(50)
+                listaTickets.add(nuevoTicket)
+                guardarTicketEnFirebase(nuevoTicket)  // ✅ SE GUARDA EN LA NUBE AUTOMÁTICO
+                delay(50)
             }
             estadoCreacion = EstadoCreacion.Terminado
         }
@@ -704,7 +737,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 is EstadoCreacion.Terminado -> {
-                    Text("✅ ¡$cantidadSeleccion tickets creados!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
+                    Text("✅ ¡$cantidadSeleccion tickets creados y guardados en la nube!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }

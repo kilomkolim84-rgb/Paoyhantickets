@@ -816,27 +816,33 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     }
 
     LaunchedEffect(estadoCreacion) {
-        if (estadoCreacion is EstadoCreacion.Creando) {
-            val total = cantidadSeleccion.toInt()
-            for (i in 1..total) {
-                estadoCreacion = EstadoCreacion.Creando(i.toFloat() / total.toFloat())
-                kotlinx.coroutines.delay(30)
-            }
-            val fechaHora = obtenerFechaHora()
-            repeat(cantidadSeleccion.toInt()) {
-                listaTickets.add(
-                    Ticket(
-                        codigo = generarCodigo(),
-                        tiempo = tiempoSeleccion,
-                        valor = valorSeleccion,
-                        tipoTiempo = tipoTiempoSeleccion,
-                        fechaHora = fechaHora
-                    )
+    if (estadoCreacion is EstadoCreacion.Creando) {
+        val total = cantidadSeleccion.toInt()
+        val fechaHora = obtenerFechaHora()
+        
+        for (i in 1..total) {
+            // 🔄 Actualizar barra de progreso
+            estadoCreacion = EstadoCreacion.Creando(i.toFloat() / total.toFloat())
+            
+            // ✅ CREA Y AGREGA 1 TICKET AHORA MISMO
+            listaTickets.add(
+                Ticket(
+                    codigo = generarCodigo(),
+                    tiempo = tiempoSeleccion,
+                    valor = valorSeleccion,
+                    tipoTiempo = tipoTiempoSeleccion,
+                    fechaHora = fechaHora
                 )
-            }
-            estadoCreacion = EstadoCreacion.Terminado
+            )
+            
+            // ⏱️ Espera 50ms antes del siguiente → NO SE TRABA
+            kotlinx.coroutines.delay(50)
         }
+        
+        estadoCreacion = EstadoCreacion.Terminado
     }
+}
+
 
     Card(
         modifier = Modifier

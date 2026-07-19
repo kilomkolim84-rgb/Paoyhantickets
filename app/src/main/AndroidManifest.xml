@@ -6,7 +6,7 @@
     
     <application
         android:allowBackup="true"
-        android:label="PaoyangTickets"
+        android:label="PaoyhanTickets"
         android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true">
         

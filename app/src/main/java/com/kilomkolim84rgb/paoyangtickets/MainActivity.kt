@@ -41,6 +41,12 @@ fun PantallaPrincipal() {
     var abrirCrearTicket by remember { mutableStateOf(false) }
     var abrirTicketsCreados by remember { mutableStateOf(false) }
 
+    // ✅ CÁLCULO DE CANTIDADES EN TIEMPO REAL
+    val totalTickets by remember { derivedStateOf { listaTickets.size } }
+    val ticketsActivos by remember { derivedStateOf { listaTickets.count { it.estado == "✅ Activo" } } }
+    val ticketsPausados by remember { derivedStateOf { listaTickets.count { it.estado == "⏸️ Pausado" } } }
+    val ticketsVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "🔴 Vencido" } } }
+
     val datosRouter = remember(routerSeleccionado) {
         if (routerSeleccionado == 1) {
             mapOf(
@@ -177,6 +183,7 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // ✅ BOTÓN TICKETS CREADOS CON CANTIDAD
         Button(
             onClick = { abrirTicketsCreados = true },
             modifier = Modifier
@@ -186,7 +193,7 @@ fun PantallaPrincipal() {
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
         ) {
             Text(
-                text = "📋 TICKETS CREADOS",
+                text = "📋 TICKETS CREADOS ($totalTickets)",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -194,14 +201,15 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // ✅ BOTONES CON CANTIDADES EN TIEMPO REAL
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana(texto = "🟢 Activos", color = Color(0xFF22C55E), modifier = Modifier.weight(1f))
-            BotonPestana(texto = "🟡 Pausados", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "🟢 ACTIVOS ($ticketsActivos)", color = Color(0xFF22C55E), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "🟡 PAUSADOS ($ticketsPausados)", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
         }
         Spacer(modifier = Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana(texto = "🔴 Vencidos", color = Color(0xFFEF4444), modifier = Modifier.weight(1f))
-            BotonPestana(texto = "📋 Historial", color = Color(0xFF6366F1), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "🔴 VENCIDOS ($ticketsVencidos)", color = Color(0xFFEF4444), modifier = Modifier.weight(1f))
+            BotonPestana(texto = "📋 HISTORIAL", color = Color(0xFF6366F1), modifier = Modifier.weight(1f))
         }
     }
 }
@@ -280,7 +288,7 @@ data class Ticket(
     val estado: String = "✅ Activo"
 )
 
-// 📋 VENTANA TICKETS CREADOS — CON BOTÓN QR + BORRAR
+// 📋 VENTANA TICKETS CREADOS — CON QR Y CANTIDAD TOTAL
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }
@@ -300,7 +308,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
             modifier = Modifier.padding(24.dp).height(450.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("📋 TICKETS CREADOS", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("📋 TICKETS CREADOS (${listaTickets.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
 
             // 🔍 BUSCAR

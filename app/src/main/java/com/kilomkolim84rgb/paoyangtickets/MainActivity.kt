@@ -1,5 +1,7 @@
 package com.kilomkolim84rgb.paoyangtickets
 
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -15,10 +17,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -249,6 +254,21 @@ fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
+// ✅ FUNCIÓN GENERAR QR
+fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
+    val escritor = QRCodeWriter()
+    val matrizBit = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
+    val ancho = matrizBit.width
+    val alto = matrizBit.height
+    val bitmap = Bitmap.createBitmap(ancho, alto, Bitmap.Config.RGB_565)
+    for (x in 0 until ancho) {
+        for (y in 0 until alto) {
+            bitmap.setPixel(x, y, if (matrizBit[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
+        }
+    }
+    return bitmap
+}
+
 // LISTA DE TICKETS — ALMACÉN GLOBAL
 val listaTickets = mutableStateListOf<Ticket>()
 
@@ -260,7 +280,7 @@ data class Ticket(
     val estado: String = "✅ Activo"
 )
 
-// 📋 VENTANA TICKETS CREADOS — CON BORRAR
+// 📋 VENTANA TICKETS CREADOS — CON BOTÓN QR + BORRAR
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }
@@ -323,8 +343,72 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     Text("${ticket.tiempo} • ${ticket.valor} • ${ticket.tipoTiempo}", fontSize = 12.sp, color = Color.Gray)
                                     Text(ticket.estado, fontSize = 12.sp)
                                 }
-                                IconButton(onClick = { listaTickets.remove(ticket) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+
+                                var mostrarQR by remember { mutableStateOf(false) }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    // ✅ BOTÓN QR
+                                    Button(
+                                        onClick = { mostrarQR = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Text("QR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    // BOTÓN BORRAR
+                                    IconButton(
+                                        onClick = { listaTickets.remove(ticket) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color(0xFFEF4444))
+                                    }
+                                }
+
+                                // ✅ VENTANA DEL QR
+                                if (mostrarQR) {
+                                    Dialog(onDismissRequest = { mostrarQR = false }) {
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(20.dp),
+                                            shape = RoundedCornerShape(20.dp)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(24.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text("📱 CÓDIGO QR", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                                Spacer(modifier = Modifier.height(20.dp))
+
+                                                val qrBitmap = remember(ticket.codigo) { generarCodigoQR(ticket.codigo) }
+                                                Image(
+                                                    bitmap = qrBitmap.asImageBitmap(),
+                                                    contentDescription = "Código QR",
+                                                    modifier = Modifier
+                                                        .size(280.dp)
+                                                        .border(BorderStroke(2.dp, Color(0xFFE0E0E0)), RoundedCornerShape(8.dp))
+                                                        .background(Color.White, RoundedCornerShape(8.dp))
+                                                )
+
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text("Código: ${ticket.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                Text("${ticket.tiempo} • ${ticket.valor}", fontSize = 14.sp, color = Color.Gray)
+
+                                                Spacer(modifier = Modifier.height(24.dp))
+                                                Button(
+                                                    onClick = { mostrarQR = false },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(50.dp),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -340,10 +424,9 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🎫 VENTANA CREAR TICKET — ACTUALIZADA COMPLETA
+// 🎫 VENTANA CREAR TICKET — SIN TRABARSE
 @Composable
 fun CrearTicketVentana(onCerrar: () -> Unit) {
-    // ✅ VALORES EXACTOS COMO PEDISTE
     val listaValores = listOf(
         "S/ 0.50", "S/ 1.00", "S/ 2.00", "S/ 3.00", "S/ 4.00", "S/ 5.00",
         "S/ 8.00", "S/ 10.00", "S/ 20.00", "S/ 30.00", "S/ 40.00", "S/ 50.00",
@@ -360,7 +443,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     val listaTipoCodigo = listOf("🔢 Solo Números", "🔤 Letras + Números")
     val listaDigitos = listOf("5 Dígitos", "6 Dígitos")
 
-    // ESTADOS
     var tiempoExpandido by remember { mutableStateOf(false) }
     var valorExpandido by remember { mutableStateOf(false) }
     var cantidadExpandido by remember { mutableStateOf(false) }
@@ -377,7 +459,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
     var estadoCreacion by remember { mutableStateOf<EstadoCreacion>(EstadoCreacion.Idle) }
 
-    // GENERAR CÓDIGO
     fun generarCodigo(): String {
         val cantDigitos = if (digitosSeleccion == "5 Dígitos") 5 else 6
         return if (tipoCodigoSeleccion == "🔢 Solo Números") {
@@ -388,16 +469,12 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
         }
     }
 
-    // ANIMACIÓN DE PROGRESO
+    // ✅ CREA 1 POR 1 — SIN TRABARSE
     LaunchedEffect(estadoCreacion) {
         if (estadoCreacion is EstadoCreacion.Creando) {
             val total = cantidadSeleccion.toInt()
             for (i in 1..total) {
                 (estadoCreacion as? EstadoCreacion.Creando)?.progreso = i.toFloat() / total.toFloat()
-                kotlinx.coroutines.delay(30)
-            }
-            // GUARDAR TICKETS EN LA LISTA
-            repeat(cantidadSeleccion.toInt()) {
                 listaTickets.add(
                     Ticket(
                         codigo = generarCodigo(),
@@ -406,6 +483,7 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                         tipoTiempo = tipoTiempoSeleccion
                     )
                 )
+                kotlinx.coroutines.delay(50)
             }
             estadoCreacion = EstadoCreacion.Terminado
         }
@@ -424,7 +502,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
             Text("🎫 CREAR TICKET", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 🔤 TIPO DE CÓDIGO
             Text("Tipo de código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -455,7 +532,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 🔢 DÍGITOS
             Text("Dígitos del código:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -486,7 +562,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ⏱️ TIEMPO
             Text("Tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -517,7 +592,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ⏱️ TIPO DE TIEMPO
             Text("Tipo de tiempo:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -548,7 +622,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 💰 VALOR
             Text("Valor:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -579,7 +652,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 🔢 CANTIDAD
             Text("Cantidad de tickets:", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Box {
                 Button(
@@ -610,9 +682,8 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 📊 BARRA DE PROGRESO
             when (estadoCreacion) {
-                is EstadoCreacion.Idle -> { /* Sin mostrar nada */ }
+                is EstadoCreacion.Idle -> {}
                 is EstadoCreacion.Creando -> {
                     val progreso = (estadoCreacion as EstadoCreacion.Creando).progreso
                     Text("🔄 Creando $cantidadSeleccion tickets...", fontSize = 14.sp, color = Color.Gray)
@@ -630,7 +701,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            // BOTONES
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -667,7 +737,6 @@ fun CrearTicketVentana(onCerrar: () -> Unit) {
     }
 }
 
-// ESTADOS
 sealed class EstadoCreacion {
     object Idle : EstadoCreacion()
     data class Creando(var progreso: Float) : EstadoCreacion()

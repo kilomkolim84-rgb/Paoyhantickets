@@ -425,8 +425,8 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
 
                                 var mostrarQR by remember { mutableStateOf(false) }
 
-                                Column(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                  Button(
                                         onClick = {
                                             val index = listaTickets.indexOf(ticket)
                                             if (index >= 0) {

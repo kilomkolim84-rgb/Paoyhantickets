@@ -31,6 +31,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

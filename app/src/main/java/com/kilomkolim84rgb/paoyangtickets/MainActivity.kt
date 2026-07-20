@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ✅ ESCUCHA TICKETS DESDE EL ESP32 EN TIEMPO REAL AS
+// ✅ ESCUCHA TICKETS DESDE EL ESP32 EN TIEMPO REAL
 fun escucharTicketsFirebase() {
     val db = FirebaseDatabase.getInstance().reference.child("tickets/ultimo")
     db.addValueEventListener(object : ValueEventListener {

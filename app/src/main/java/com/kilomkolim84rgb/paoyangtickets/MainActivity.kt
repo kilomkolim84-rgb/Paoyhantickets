@@ -42,41 +42,42 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// ✅ ESCUCHA TICKETS DESDE EL ESP32 — AHORA GUARDA EL CÓDIGO DE PAOYANG EN FIREBASE
+// ✅ ESCUCHA TICKETS — FUNCIONA IGUAL PERO SIN REPETIRSE
 fun escucharTicketsFirebase() {
     val ref = db.child("tickets/ultimo")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            if (snapshot.exists()) {
-                val monto = snapshot.child("monto").getValue(Float::class.java) ?: 0f
-                val minutos = snapshot.child("minutos").getValue(Int::class.java) ?: 0
-                val tiempoStr = snapshot.child("tiempo").getValue(String::class.java) ?: ""
-                val fecha = snapshot.child("fecha").getValue(String::class.java) ?: ""
+            if (!snapshot.exists()) return
 
-                if (monto > 0f) {
-                    // ✅ GENERA EL CÓDIGO AQUÍ EN PAOYANGTICKETS
-                    val codigoGenerado = generarCodigoAutomatico()
+            val monto = snapshot.child("monto").getValue(Float::class.java) ?: 0f
+            val minutos = snapshot.child("minutos").getValue(Int::class.java) ?: 0
+            val tiempoStr = snapshot.child("tiempo").getValue(String::class.java) ?: ""
+            val fecha = snapshot.child("fecha").getValue(String::class.java) ?: ""
+
+            if (monto > 0f) {
+                val codigoGenerado = generarCodigoAutomatico()
+                
+                val nuevoTicket = Ticket(
+                    codigo = codigoGenerado,
+                    monto = monto,
+                    minutos = minutos,
+                    tiempoStr = tiempoStr,
+                    fecha = fecha,
+                    estado = "CREADO"
+                )
+                
+                if (listaTickets.none { it.codigo == nuevoTicket.codigo }) {
+                    listaTickets.add(0, nuevoTicket)
                     
-                    val nuevoTicket = Ticket(
-                        codigo = codigoGenerado,
-                        monto = monto,
-                        minutos = minutos,
-                        tiempoStr = tiempoStr,
-                        fecha = fecha,
-                        estado = "CREADO"
-                    )
+                    val qrTexto = "ID:$codigoGenerado|S:$monto|MIN:$minutos"
+                    ref.child("codigo").setValue(codigoGenerado)
+                    ref.child("qr_texto").setValue(qrTexto)
+                    ref.child("fecha_creacion").setValue(fecha)
                     
-                    if (listaTickets.none { it.codigo == nuevoTicket.codigo }) {
-                        listaTickets.add(0, nuevoTicket)
-                        
-                        // ✅ GUARDA EL CÓDIGO REAL EN FIREBASE — PARA QUE EL MONEDERO LO LEA
-                        val qrTexto = "ID:$codigoGenerado|S:$monto|MIN:$minutos"
-                        ref.child("codigo").setValue(codigoGenerado)
-                        ref.child("qr_texto").setValue(qrTexto)
-                        ref.child("fecha_creacion").setValue(fecha)
-                        
-                        println("✅ TICKET CREADO — CÓDIGO: $codigoGenerado → GUARDADO EN FIREBASE")
-                    }
+                    println("✅ TICKET CREADO — $codigoGenerado")
+                    
+                    // 🔑 LO ÚNICO QUE SE AGREGÓ: BORRA DESPUÉS DE LEER
+                    ref.removeValue()
                 }
             }
         }
@@ -462,12 +463,11 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         Text("📱 QR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
 
-                                    // ✅ BOTÓN BORRAR — BORRA EN FIREBASE TAMBIÉN
                                     Button(
                                         onClick = {
                                             listaTickets.remove(ticket)
                                             db.child("tickets/ultimo").removeValue()
-                                            println("🗑️ TICKET BORRADO: ${ticket.codigo} — FIREBASE LIMPIO")
+                                            println("🗑️ TICKET BORRADO: ${ticket.codigo}")
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),

@@ -40,9 +40,9 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// ✅ ARCHIVO LOCAL DONDE SE GUARDAN LOS TICKETS PARA SIEMPRE
+// ✅ ARCHIVO LOCAL — CORREGIDO SIN ERRORES
 class TicketManager(context: Context) {
-    private val archivo = context.fileStream("tickets_guardados.txt")
+    private val archivo = File(context.filesDir, "tickets_guardados.txt")
 
     fun cargar(): MutableList<Ticket> {
         val lista = mutableListOf<Ticket>()
@@ -80,25 +80,22 @@ class TicketManager(context: Context) {
             escritor.close()
         } catch (e: Exception) { e.printStackTrace() }
     }
-
-    fun FileStream(nombre: String): File = File(context.filesDir, nombre)
 }
 
-// ✅ LISTA PERMANENTE — CARGA AL INICIAR Y GUARDA AUTOMÁTICAMENTE
+// ✅ LISTA PERMANENTE
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 var ultimoCodigoLeido = ""
 
-// ✅ ESCUCHA FIREBASE — SOLO LEE, NO BORRA NADA
+// ✅ ESCUCHA FIREBASE
 fun escucharHistorialFirebase(context: Context) {
     gestorTickets = TicketManager(context)
     
-    // ✅ CARGAR LO GUARDADO ANTERIORMENTE
     listaTickets.addAll(gestorTickets.cargar())
     if (listaTickets.isNotEmpty()) {
         ultimoCodigoLeido = listaTickets.last().codigo
     }
-    println("✅ Cargados ${listaTickets.size} tickets guardados permanentemente")
+    println("✅ Cargados ${listaTickets.size} tickets guardados")
 
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
@@ -111,13 +108,10 @@ fun escucharHistorialFirebase(context: Context) {
                             ?: hijo.child("fechaHora").getValue(String::class.java) ?: ""
                 val estado = hijo.child("estado").getValue(String::class.java) ?: "CREADO"
 
-                // 🔒 FILTROS
                 if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                 if (monto <= 0.0) continue
 
-                // ✅ EVITAR DUPLICADOS — SOLO AGREGAR SI NO EXISTE
                 if (listaTickets.none { it.codigo == codigo }) {
-                    // 🧮 CALCULAR TIEMPO: 0.10 = 10 min
                     val minutos = (monto * 100).toInt()
                     val horas = minutos / 60
                     val mins = minutos % 60
@@ -133,10 +127,8 @@ fun escucharHistorialFirebase(context: Context) {
                     )
                     listaTickets.add(nuevoTicket)
                     ultimoCodigoLeido = codigo
-                    
-                    // ✅ GUARDAR EN MEMORIA DEL CELULAR PARA SIEMPRE
                     gestorTickets.guardar(listaTickets)
-                    println("✅ TICKET GUARDADO PERMANENTEMENTE: $codigo — S/ $monto — $tiempoStr")
+                    println("✅ Guardado: $codigo — S/ $monto — $tiempoStr")
                 }
             }
         }
@@ -525,7 +517,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         onClick = {
                                             listaTickets.remove(ticket)
                                             gestorTickets.guardar(listaTickets)
-                                            println("🗑️ TICKET BORRADO DE LA APP: ${ticket.codigo}")
+                                            println("🗑️ BORRADO: ${ticket.codigo}")
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -591,7 +583,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     onClick = {
                         ticketsFiltrados.forEach { listaTickets.remove(it) }
                         gestorTickets.guardar(listaTickets)
-                        println("🗑️ TODOS LOS CREADOS BORRADOS DE LA APP")
+                        println("🗑️ TODOS BORRADOS")
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -886,7 +878,7 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                     onClick = {
                         listaTickets.clear()
                         gestorTickets.guardar(listaTickets)
-                        println("🗑️ TODO EL HISTORIAL BORRADO DE LA APP")
+                        println("🗑️ HISTORIAL BORRADO")
                     },
                     modifier = Modifier
                         .fillMaxWidth()

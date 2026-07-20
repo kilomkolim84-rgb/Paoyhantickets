@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -62,7 +63,6 @@ fun escucharTicketsFirebase() {
                         estado = "CREADO"
                     )
                     
-                    // Verificar que no exista ya
                     if (listaTickets.none { it.codigo == nuevoTicket.codigo }) {
                         listaTickets.add(0, nuevoTicket)
                     }
@@ -87,12 +87,10 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var abrirHistorial by remember { mutableStateOf(false) }
 
-    // ✅ CARGA TICKETS AL INICIAR Y ESCUCHA CAMBIOS
     LaunchedEffect(Unit) {
         escucharTicketsFirebase()
     }
 
-    // ✅ CÁLCULO DE CANTIDADES EN TIEMPO REAL
     val ticketsCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
     val ticketsActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
     val ticketsPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
@@ -231,7 +229,6 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ✅ BOTÓN PRINCIPAL: TICKETS CREADOS (DEL ESP32)
         Button(
             onClick = { abrirTicketsCreados = true },
             modifier = Modifier
@@ -249,7 +246,6 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ✅ BOTONES CON CANTIDADES EN TIEMPO REAL
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             BotonPestana(
                 texto = "🟢 ACTIVOS ($ticketsActivos)",
@@ -335,7 +331,6 @@ fun BotonPestana(
     }
 }
 
-// ✅ FUNCIÓN GENERAR QR
 fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
     val escritor = QRCodeWriter()
     val matrizBit = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
@@ -350,7 +345,6 @@ fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
     return bitmap
 }
 
-// 📋 LISTA DE TICKETS — ALMACÉN GLOBAL
 val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
@@ -362,7 +356,6 @@ data class Ticket(
     val estado: String = "CREADO"
 )
 
-// 📋 VENTANA TICKETS CREADOS — RECIBIDOS DEL ESP32
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }
@@ -387,7 +380,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
             Text("📋 TICKETS CREADOS (${ticketsFiltrados.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 🔍 BUSCAR
             OutlinedTextField(
                 value = textoBuscar,
                 onValueChange = { textoBuscar = it },
@@ -436,7 +428,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 var mostrarQR by remember { mutableStateOf(false) }
 
                                 Column(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    // ✅ BOTÓN ACTIVAR
                                     Button(
                                         onClick = {
                                             val index = listaTickets.indexOf(ticket)
@@ -451,7 +442,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         Text("✅ ACTIVAR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
 
-                                    // ✅ BOTÓN QR
                                     Button(
                                         onClick = { mostrarQR = true },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
@@ -462,7 +452,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     }
                                 }
 
-                                // ✅ VENTANA DEL QR
                                 if (mostrarQR) {
                                     Dialog(onDismissRequest = { mostrarQR = false }) {
                                         Card(
@@ -520,7 +509,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🟢 VENTANA TICKETS ACTIVOS
 @Composable
 fun TicketsActivosVentana(onCerrar: () -> Unit) {
     val ticketsActivos = remember(listaTickets.size) { listaTickets.filter { it.estado == "ACTIVO" } }
@@ -591,7 +579,6 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🟡 VENTANA TICKETS PAUSADOS
 @Composable
 fun TicketsPausadosVentana(onCerrar: () -> Unit) {
     val ticketsPausados = remember(listaTickets.size) { listaTickets.filter { it.estado == "PAUSADO" } }
@@ -662,7 +649,6 @@ fun TicketsPausadosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 🔴 VENTANA TICKETS VENCIDOS
 @Composable
 fun TicketsVencidosVentana(onCerrar: () -> Unit) {
     val ticketsVencidos = remember(listaTickets.size) { listaTickets.filter { it.estado == "VENCIDO" } }
@@ -722,7 +708,6 @@ fun TicketsVencidosVentana(onCerrar: () -> Unit) {
     }
 }
 
-// 📋 VENTANA HISTORIAL
 @Composable
 fun HistorialVentana(onCerrar: () -> Unit) {
     Card(

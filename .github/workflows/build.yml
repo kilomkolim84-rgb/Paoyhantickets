@@ -1,10 +1,4 @@
 name: Build App
-run-name: Compilando — ${github.sha}
-
-# Forzar arranque inmediato
-concurrency:
-  group: ${{ github.workflow }}-${github.ref}
-  cancel-in-progress: true
 on: [push, workflow_dispatch]
 jobs:
   build:

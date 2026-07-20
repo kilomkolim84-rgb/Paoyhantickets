@@ -40,10 +40,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ✅ ESCUCHA TICKETS DESDE EL ESP32 EN TIEMPO REAL
+val db = FirebaseDatabase.getInstance().reference
+
+// ✅ ESCUCHA TICKETS DESDE EL ESP32 — AHORA GUARDA EL CÓDIGO DE PAOYANG EN FIREBASE
 fun escucharTicketsFirebase() {
-    val db = FirebaseDatabase.getInstance().reference.child("tickets/ultimo")
-    db.addValueEventListener(object : ValueEventListener {
+    val ref = db.child("tickets/ultimo")
+    ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
             if (snapshot.exists()) {
                 val monto = snapshot.child("monto").getValue(Float::class.java) ?: 0f
@@ -52,8 +54,11 @@ fun escucharTicketsFirebase() {
                 val fecha = snapshot.child("fecha").getValue(String::class.java) ?: ""
 
                 if (monto > 0f) {
+                    // ✅ GENERA EL CÓDIGO AQUÍ EN PAOYANGTICKETS
+                    val codigoGenerado = generarCodigoAutomatico()
+                    
                     val nuevoTicket = Ticket(
-                        codigo = generarCodigoAutomatico(),
+                        codigo = codigoGenerado,
                         monto = monto,
                         minutos = minutos,
                         tiempoStr = tiempoStr,
@@ -63,6 +68,14 @@ fun escucharTicketsFirebase() {
                     
                     if (listaTickets.none { it.codigo == nuevoTicket.codigo }) {
                         listaTickets.add(0, nuevoTicket)
+                        
+                        // ✅ GUARDA EL CÓDIGO REAL EN FIREBASE — PARA QUE EL MONEDERO LO LEA
+                        val qrTexto = "ID:$codigoGenerado|S:$monto|MIN:$minutos"
+                        ref.child("codigo").setValue(codigoGenerado)
+                        ref.child("qr_texto").setValue(qrTexto)
+                        ref.child("fecha_creacion").setValue(fecha)
+                        
+                        println("✅ TICKET CREADO — CÓDIGO: $codigoGenerado → GUARDADO EN FIREBASE")
                     }
                 }
             }
@@ -426,7 +439,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 var mostrarQR by remember { mutableStateOf(false) }
 
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                  Button(
+                                    Button(
                                         onClick = {
                                             val index = listaTickets.indexOf(ticket)
                                             if (index >= 0) {
@@ -448,6 +461,20 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     ) {
                                         Text("📱 QR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
+
+                                    // ✅ BOTÓN BORRAR — BORRA EN FIREBASE TAMBIÉN
+                                    Button(
+                                        onClick = {
+                                            listaTickets.remove(ticket)
+                                            db.child("tickets/ultimo").removeValue()
+                                            println("🗑️ TICKET BORRADO: ${ticket.codigo} — FIREBASE LIMPIO")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Text("❌ BORRAR", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
 
                                 if (mostrarQR) {
@@ -465,7 +492,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                                 Text("📱 ESCANEAR PARA ACTIVAR", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                                 Spacer(modifier = Modifier.height(20.dp))
 
-                                                val qrBitmap = remember(ticket.codigo) { generarCodigoQR(ticket.codigo) }
+                                                val qrBitmap = remember(ticket.codigo) { generarCodigoQR("ID:${ticket.codigo}|S:${ticket.monto}|MIN:${ticket.minutos}") }
                                                 Image(
                                                     bitmap = qrBitmap.asImageBitmap(),
                                                     contentDescription = "Código QR",

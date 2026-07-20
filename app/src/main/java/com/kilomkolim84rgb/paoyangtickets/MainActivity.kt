@@ -1,5 +1,6 @@
 package com.kilomkolim84rgb.paoyangtickets
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
@@ -26,6 +27,7 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import java.io.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,22 +40,105 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// ✅ LA APP YA NO CREA NADA — SOLO LEE LO QUE EL ESP32 GUARDÓ
-fun escucharHistorialFirebase() {
-    val ref = db.child("historial")
-    
-    ref.addValueEventListener(object : ValueEventListener {
-        override fun onDataChange(snapshot: DataSnapshot) {
-            listaTickets.clear() // Limpia todo primero
-            
-            for (hijo in snapshot.children) {
-                val ticket = hijo.getValue(Ticket::class.java)
-                if (ticket != null) {
-                    listaTickets.add(ticket) // ✅ SOLO MUESTRA, NO CREA
+// ✅ ARCHIVO LOCAL DONDE SE GUARDAN LOS TICKETS PARA SIEMPRE
+class TicketManager(context: Context) {
+    private val archivo = context.fileStream("tickets_guardados.txt")
+
+    fun cargar(): MutableList<Ticket> {
+        val lista = mutableListOf<Ticket>()
+        try {
+            if (!archivo.exists()) return lista
+            val lector = BufferedReader(InputStreamReader(FileInputStream(archivo)))
+            var linea: String?
+            while (lector.readLine().also { linea = it } != null) {
+                val datos = linea!!.split("|")
+                if (datos.size >= 6) {
+                    lista.add(
+                        Ticket(
+                            codigo = datos[0],
+                            monto = datos[1].toFloatOrNull() ?: 0f,
+                            minutos = datos[2].toIntOrNull() ?: 0,
+                            tiempoStr = datos[3],
+                            fecha = datos[4],
+                            estado = datos[5]
+                        )
+                    )
                 }
             }
-            
-            println("✅ Historial cargado: ${listaTickets.size} tickets — SIN DUPLICADOS")
+            lector.close()
+        } catch (e: Exception) { e.printStackTrace() }
+        return lista
+    }
+
+    fun guardar(tickets: List<Ticket>) {
+        try {
+            val escritor = BufferedWriter(OutputStreamWriter(FileOutputStream(archivo)))
+            tickets.forEach { t ->
+                escritor.write("${t.codigo}|${t.monto}|${t.minutos}|${t.tiempoStr}|${t.fecha}|${t.estado}")
+                escritor.newLine()
+            }
+            escritor.close()
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    fun FileStream(nombre: String): File = File(context.filesDir, nombre)
+}
+
+// ✅ LISTA PERMANENTE — CARGA AL INICIAR Y GUARDA AUTOMÁTICAMENTE
+lateinit var gestorTickets: TicketManager
+val listaTickets = mutableStateListOf<Ticket>()
+var ultimoCodigoLeido = ""
+
+// ✅ ESCUCHA FIREBASE — SOLO LEE, NO BORRA NADA
+fun escucharHistorialFirebase(context: Context) {
+    gestorTickets = TicketManager(context)
+    
+    // ✅ CARGAR LO GUARDADO ANTERIORMENTE
+    listaTickets.addAll(gestorTickets.cargar())
+    if (listaTickets.isNotEmpty()) {
+        ultimoCodigoLeido = listaTickets.last().codigo
+    }
+    println("✅ Cargados ${listaTickets.size} tickets guardados permanentemente")
+
+    val ref = db.child("historial")
+    ref.addValueEventListener(object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            for (hijo in snapshot.children) {
+                val codigo = hijo.child("codigo").getValue(String::class.java) ?: ""
+                val monto = hijo.child("monto").getValue(Double::class.java) 
+                            ?: hijo.child("montoIngresado").getValue(Double::class.java) ?: 0.0
+                val fecha = hijo.child("fecha").getValue(String::class.java) 
+                            ?: hijo.child("fechaHora").getValue(String::class.java) ?: ""
+                val estado = hijo.child("estado").getValue(String::class.java) ?: "CREADO"
+
+                // 🔒 FILTROS
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
+                if (monto <= 0.0) continue
+
+                // ✅ EVITAR DUPLICADOS — SOLO AGREGAR SI NO EXISTE
+                if (listaTickets.none { it.codigo == codigo }) {
+                    // 🧮 CALCULAR TIEMPO: 0.10 = 10 min
+                    val minutos = (monto * 100).toInt()
+                    val horas = minutos / 60
+                    val mins = minutos % 60
+                    val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
+
+                    val nuevoTicket = Ticket(
+                        codigo = codigo,
+                        monto = monto.toFloat(),
+                        minutos = minutos,
+                        tiempoStr = tiempoStr,
+                        fecha = fecha,
+                        estado = estado
+                    )
+                    listaTickets.add(nuevoTicket)
+                    ultimoCodigoLeido = codigo
+                    
+                    // ✅ GUARDAR EN MEMORIA DEL CELULAR PARA SIEMPRE
+                    gestorTickets.guardar(listaTickets)
+                    println("✅ TICKET GUARDADO PERMANENTEMENTE: $codigo — S/ $monto — $tiempoStr")
+                }
+            }
         }
 
         override fun onCancelled(error: DatabaseError) {
@@ -71,8 +156,9 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var abrirHistorial by remember { mutableStateOf(false) }
 
+    val contexto = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
-        escucharHistorialFirebase() // ✅ SOLO LEE, NO CREA
+        escucharHistorialFirebase(contexto)
     }
 
     val ticketsCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
@@ -253,7 +339,7 @@ fun PantallaPrincipal() {
                 alTocar = { abrirVencidos = true }
             )
             BotonPestana(
-                texto = "📋 HISTORIAL",
+                texto = "📋 HISTORIAL (${listaTickets.size})",
                 color = Color(0xFF6366F1),
                 modifier = Modifier.weight(1f),
                 alTocar = { abrirHistorial = true }
@@ -328,8 +414,6 @@ fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
     }
     return bitmap
 }
-
-val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
     val codigo: String = "",
@@ -418,7 +502,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                             val index = listaTickets.indexOf(ticket)
                                             if (index >= 0) {
                                                 listaTickets[index] = ticket.copy(estado = "ACTIVO")
-                                                db.child("historial").child(ticket.codigo).child("estado").setValue("ACTIVO")
+                                                gestorTickets.guardar(listaTickets)
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
@@ -440,8 +524,8 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     Button(
                                         onClick = {
                                             listaTickets.remove(ticket)
-                                            db.child("historial").child(ticket.codigo).removeValue()
-                                            println("🗑️ TICKET BORRADO: ${ticket.codigo}")
+                                            gestorTickets.guardar(listaTickets)
+                                            println("🗑️ TICKET BORRADO DE LA APP: ${ticket.codigo}")
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -505,11 +589,9 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
             if (ticketsFiltrados.isNotEmpty()) {
                 Button(
                     onClick = {
-                        ticketsFiltrados.forEach { 
-                            listaTickets.remove(it)
-                            db.child("historial").child(it.codigo).removeValue()
-                        }
-                        println("🗑️ TODOS LOS TICKETS CREADOS BORRADOS")
+                        ticketsFiltrados.forEach { listaTickets.remove(it) }
+                        gestorTickets.guardar(listaTickets)
+                        println("🗑️ TODOS LOS CREADOS BORRADOS DE LA APP")
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -579,7 +661,7 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
                                         val index = listaTickets.indexOf(ticket)
                                         if (index >= 0) {
                                             listaTickets[index] = ticket.copy(estado = "PAUSADO")
-                                            db.child("historial").child(ticket.codigo).child("estado").setValue("PAUSADO")
+                                            gestorTickets.guardar(listaTickets)
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
@@ -650,7 +732,7 @@ fun TicketsPausadosVentana(onCerrar: () -> Unit) {
                                         val index = listaTickets.indexOf(ticket)
                                         if (index >= 0) {
                                             listaTickets[index] = ticket.copy(estado = "ACTIVO")
-                                            db.child("historial").child(ticket.codigo).child("estado").setValue("ACTIVO")
+                                            gestorTickets.guardar(listaTickets)
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
@@ -803,8 +885,8 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                 Button(
                     onClick = {
                         listaTickets.clear()
-                        db.child("historial").removeValue()
-                        println("🗑️ TODO EL HISTORIAL BORRADO")
+                        gestorTickets.guardar(listaTickets)
+                        println("🗑️ TODO EL HISTORIAL BORRADO DE LA APP")
                     },
                     modifier = Modifier
                         .fillMaxWidth()

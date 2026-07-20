@@ -28,7 +28,6 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import kotlinx.coroutines.delay
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -42,19 +41,27 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// 🔒 BANDERA ANTI-DUPLICADOS — EVITA QUE SE PROCESE VARIAS VECES
-var procesandoTicket = false
+// 🔒 BLOQUEO DE TIEMPO — SOLO 1 TICKET CADA 3 SEGUNDOS
+var ultimoTicketCreado = 0L
+const val TIEMPO_BLOQUEO = 3000L // 3 segundos
 
-// ✅ ESCUCHA TICKETS — CORREGIDO PARA QUE NO SE DUPLIQUE
+// ✅ ESCUCHA CORREGIDA — BLOQUEA POR TIEMPO, NO POR BANDERA
 fun escucharTicketsFirebase() {
     val ref = db.child("tickets/ultimo")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
             if (!snapshot.exists()) return
+
+            val ahora = System.currentTimeMillis()
             
-            // 🔑 SI YA ESTÁ PROCESANDO, IGNORA — ASÍ NO SE DUPLICA
-            if (procesandoTicket) return
-            procesandoTicket = true
+            // 🔑 SI NO HAN PASADO 3 SEGUNDOS → IGNORA Y SE ACABÓ
+            if (ahora - ultimoTicketCreado < TIEMPO_BLOQUEO) {
+                println("🚫 IGNORADO — Muy pronto desde el último ticket")
+                return
+            }
+            
+            // ✅ MARCA EL TIEMPO Y PROCESA 1 SOLA VEZ
+            ultimoTicketCreado = ahora
 
             val monto = snapshot.child("monto").getValue(Float::class.java) ?: 0f
             val minutos = snapshot.child("minutos").getValue(Int::class.java) ?: 0
@@ -64,39 +71,27 @@ fun escucharTicketsFirebase() {
             if (monto > 0f) {
                 val codigoGenerado = generarCodigoAutomatico()
                 
-                val nuevoTicket = Ticket(
-                    codigo = codigoGenerado,
-                    monto = monto,
-                    minutos = minutos,
-                    tiempoStr = tiempoStr,
-                    fecha = fecha,
-                    estado = "CREADO"
-                )
-                
-                if (listaTickets.none { it.codigo == nuevoTicket.codigo }) {
+                // EVITAR DUPLICADOS POR CÓDIGO
+                if (listaTickets.none { it.codigo == codigoGenerado }) {
+                    val nuevoTicket = Ticket(
+                        codigo = codigoGenerado,
+                        monto = monto,
+                        minutos = minutos,
+                        tiempoStr = tiempoStr,
+                        fecha = fecha,
+                        estado = "CREADO"
+                    )
+                    
                     listaTickets.add(0, nuevoTicket)
-                    
-                    val qrTexto = "ID:$codigoGenerado|S:$monto|MIN:$minutos"
-                    ref.child("codigo").setValue(codigoGenerado)
-                    ref.child("qr_texto").setValue(qrTexto)
-                    ref.child("fecha_creacion").setValue(fecha)
-                    
-                    println("✅ TICKET CREADO — $codigoGenerado (S/ $monto)")
-                    
-                    // GUARDAR EN HISTORIAL DE FIREBASE
                     db.child("historial").child(codigoGenerado).setValue(nuevoTicket)
                     
-                    // BORRAR PARA QUE NO SE VUELVA A LEER
-                    ref.removeValue()
+                    println("✅ TICKET CREADO 1 SOLA VEZ: $codigoGenerado — S/ $monto")
                 }
             }
-            
-            // LIBERAR BANDERA DESPUÉS DE PROCESAR
-            procesandoTicket = false
         }
 
         override fun onCancelled(error: DatabaseError) {
-            procesandoTicket = false
+            println("❌ Error Firebase: ${error.message}")
         }
     })
 }
@@ -544,7 +539,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(12.dp))
             
-            // 🗑️ BOTÓN BORRAR TODOS LOS CREADOS
             if (ticketsFiltrados.isNotEmpty()) {
                 Button(
                     onClick = {
@@ -840,7 +834,6 @@ fun HistorialVentana(onCerrar: () -> Unit) {
 
             Spacer(modifier = Modifier.height(12.dp))
             
-            // 🗑️ BOTÓN BORRAR TODO EL HISTORIAL
             if (listaTickets.isNotEmpty()) {
                 Button(
                     onClick = {

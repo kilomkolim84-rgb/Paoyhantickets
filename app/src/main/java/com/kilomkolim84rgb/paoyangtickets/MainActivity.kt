@@ -9,8 +9,6 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +26,6 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,63 +38,28 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// 🔒 BLOQUEO DE TIEMPO — SOLO 1 TICKET CADA 3 SEGUNDOS
-var ultimoTicketCreado = 0L
-const val TIEMPO_BLOQUEO = 3000L // 3 segundos
-
-// ✅ ESCUCHA CORREGIDA — BLOQUEA POR TIEMPO, NO POR BANDERA
-fun escucharTicketsFirebase() {
-    val ref = db.child("tickets/ultimo")
+// ✅ LA APP YA NO CREA NADA — SOLO LEE LO QUE EL ESP32 GUARDÓ
+fun escucharHistorialFirebase() {
+    val ref = db.child("historial")
+    
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            if (!snapshot.exists()) return
-
-            val ahora = System.currentTimeMillis()
+            listaTickets.clear() // Limpia todo primero
             
-            // 🔑 SI NO HAN PASADO 3 SEGUNDOS → IGNORA Y SE ACABÓ
-            if (ahora - ultimoTicketCreado < TIEMPO_BLOQUEO) {
-                println("🚫 IGNORADO — Muy pronto desde el último ticket")
-                return
-            }
-            
-            // ✅ MARCA EL TIEMPO Y PROCESA 1 SOLA VEZ
-            ultimoTicketCreado = ahora
-
-            val monto = snapshot.child("monto").getValue(Float::class.java) ?: 0f
-            val minutos = snapshot.child("minutos").getValue(Int::class.java) ?: 0
-            val tiempoStr = snapshot.child("tiempoStr").getValue(String::class.java) ?: ""
-            val fecha = snapshot.child("fecha").getValue(String::class.java) ?: ""
-
-            if (monto > 0f) {
-                val codigoGenerado = generarCodigoAutomatico()
-                
-                // EVITAR DUPLICADOS POR CÓDIGO
-                if (listaTickets.none { it.codigo == codigoGenerado }) {
-                    val nuevoTicket = Ticket(
-                        codigo = codigoGenerado,
-                        monto = monto,
-                        minutos = minutos,
-                        tiempoStr = tiempoStr,
-                        fecha = fecha,
-                        estado = "CREADO"
-                    )
-                    
-                    listaTickets.add(0, nuevoTicket)
-                    db.child("historial").child(codigoGenerado).setValue(nuevoTicket)
-                    
-                    println("✅ TICKET CREADO 1 SOLA VEZ: $codigoGenerado — S/ $monto")
+            for (hijo in snapshot.children) {
+                val ticket = hijo.getValue(Ticket::class.java)
+                if (ticket != null) {
+                    listaTickets.add(ticket) // ✅ SOLO MUESTRA, NO CREA
                 }
             }
+            
+            println("✅ Historial cargado: ${listaTickets.size} tickets — SIN DUPLICADOS")
         }
 
         override fun onCancelled(error: DatabaseError) {
             println("❌ Error Firebase: ${error.message}")
         }
     })
-}
-
-fun generarCodigoAutomatico(): String {
-    return (1..6).joinToString("") { Random.nextInt(0, 10).toString() }
 }
 
 @Composable
@@ -110,7 +72,7 @@ fun PantallaPrincipal() {
     var abrirHistorial by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        escucharTicketsFirebase()
+        escucharHistorialFirebase() // ✅ SOLO LEE, NO CREA
     }
 
     val ticketsCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
@@ -370,7 +332,7 @@ fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
 val listaTickets = mutableStateListOf<Ticket>()
 
 data class Ticket(
-    val codigo: String,
+    val codigo: String = "",
     val monto: Float = 0f,
     val minutos: Int = 0,
     val tiempoStr: String = "",
@@ -456,6 +418,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                             val index = listaTickets.indexOf(ticket)
                                             if (index >= 0) {
                                                 listaTickets[index] = ticket.copy(estado = "ACTIVO")
+                                                db.child("historial").child(ticket.codigo).child("estado").setValue("ACTIVO")
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)),
@@ -616,6 +579,7 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
                                         val index = listaTickets.indexOf(ticket)
                                         if (index >= 0) {
                                             listaTickets[index] = ticket.copy(estado = "PAUSADO")
+                                            db.child("historial").child(ticket.codigo).child("estado").setValue("PAUSADO")
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
@@ -686,6 +650,7 @@ fun TicketsPausadosVentana(onCerrar: () -> Unit) {
                                         val index = listaTickets.indexOf(ticket)
                                         if (index >= 0) {
                                             listaTickets[index] = ticket.copy(estado = "ACTIVO")
+                                            db.child("historial").child(ticket.codigo).child("estado").setValue("ACTIVO")
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))

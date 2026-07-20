@@ -42,16 +42,23 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// ✅ ESCUCHA TICKETS — FUNCIONA IGUAL PERO SIN REPETIRSE
+// 🔒 BANDERA ANTI-DUPLICADOS — EVITA QUE SE PROCESE VARIAS VECES
+var procesandoTicket = false
+
+// ✅ ESCUCHA TICKETS — CORREGIDO PARA QUE NO SE DUPLIQUE
 fun escucharTicketsFirebase() {
     val ref = db.child("tickets/ultimo")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
             if (!snapshot.exists()) return
+            
+            // 🔑 SI YA ESTÁ PROCESANDO, IGNORA — ASÍ NO SE DUPLICA
+            if (procesandoTicket) return
+            procesandoTicket = true
 
             val monto = snapshot.child("monto").getValue(Float::class.java) ?: 0f
             val minutos = snapshot.child("minutos").getValue(Int::class.java) ?: 0
-            val tiempoStr = snapshot.child("tiempo").getValue(String::class.java) ?: ""
+            val tiempoStr = snapshot.child("tiempoStr").getValue(String::class.java) ?: ""
             val fecha = snapshot.child("fecha").getValue(String::class.java) ?: ""
 
             if (monto > 0f) {
@@ -74,15 +81,23 @@ fun escucharTicketsFirebase() {
                     ref.child("qr_texto").setValue(qrTexto)
                     ref.child("fecha_creacion").setValue(fecha)
                     
-                    println("✅ TICKET CREADO — $codigoGenerado")
+                    println("✅ TICKET CREADO — $codigoGenerado (S/ $monto)")
                     
-                    // 🔑 LO ÚNICO QUE SE AGREGÓ: BORRA DESPUÉS DE LEER
+                    // GUARDAR EN HISTORIAL DE FIREBASE
+                    db.child("historial").child(codigoGenerado).setValue(nuevoTicket)
+                    
+                    // BORRAR PARA QUE NO SE VUELVA A LEER
                     ref.removeValue()
                 }
             }
+            
+            // LIBERAR BANDERA DESPUÉS DE PROCESAR
+            procesandoTicket = false
         }
 
-        override fun onCancelled(error: DatabaseError) {}
+        override fun onCancelled(error: DatabaseError) {
+            procesandoTicket = false
+        }
     })
 }
 
@@ -386,7 +401,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
-            modifier = Modifier.padding(24.dp).height(500.dp),
+            modifier = Modifier.padding(24.dp).height(550.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("📋 TICKETS CREADOS (${ticketsFiltrados.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -408,6 +423,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
+                    .weight(1f)
             ) {
                 if (ticketsFiltrados.isEmpty()) {
                     Text("📭 No hay tickets creados aún\nMete monedas en el cajero",
@@ -466,7 +482,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     Button(
                                         onClick = {
                                             listaTickets.remove(ticket)
-                                            db.child("tickets/ultimo").removeValue()
+                                            db.child("historial").child(ticket.codigo).removeValue()
                                             println("🗑️ TICKET BORRADO: ${ticket.codigo}")
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
@@ -526,7 +542,29 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // 🗑️ BOTÓN BORRAR TODOS LOS CREADOS
+            if (ticketsFiltrados.isNotEmpty()) {
+                Button(
+                    onClick = {
+                        ticketsFiltrados.forEach { 
+                            listaTickets.remove(it)
+                            db.child("historial").child(it.codigo).removeValue()
+                        }
+                        println("🗑️ TODOS LOS TICKETS CREADOS BORRADOS")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("🗑️ BORRAR TODOS LOS CREADOS", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+            
             Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) {
                 Text("CERRAR", fontSize = 16.sp)
             }
@@ -742,7 +780,7 @@ fun HistorialVentana(onCerrar: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
-            modifier = Modifier.padding(24.dp).height(450.dp),
+            modifier = Modifier.padding(24.dp).height(500.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("📋 HISTORIAL COMPLETO (${listaTickets.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6366F1))
@@ -752,6 +790,7 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
+                    .weight(1f)
             ) {
                 if (listaTickets.isEmpty()) {
                     Text("📭 No hay registros aún", color = Color.Gray, modifier = Modifier.padding(16.dp))
@@ -799,7 +838,27 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // 🗑️ BOTÓN BORRAR TODO EL HISTORIAL
+            if (listaTickets.isNotEmpty()) {
+                Button(
+                    onClick = {
+                        listaTickets.clear()
+                        db.child("historial").removeValue()
+                        println("🗑️ TODO EL HISTORIAL BORRADO")
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("🗑️ BORRAR TODO EL HISTORIAL", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+            
             Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) {
                 Text("CERRAR", fontSize = 16.sp)
             }

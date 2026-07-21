@@ -31,6 +31,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch  // ✅ IMPORTACIÓN CORREGIDA
 import java.io.*
 
 class MainActivity : ComponentActivity() {
@@ -302,7 +303,7 @@ fun VentanaConfigMikrotik(
                     onClick = {
                         probandoConexion = true
                         mensajeEstado = null
-                        scope.launch {
+                        scope.launch {  // ✅ CORREGIDO: delay dentro de launch
                             delay(1500)
                             probandoConexion = false
                             mensajeEstado = if (ip.isNotBlank()) {

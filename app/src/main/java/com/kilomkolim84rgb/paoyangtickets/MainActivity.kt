@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -40,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// ✅ ARCHIVO LOCAL — CORREGIDO SIN ERRORES
+// ✅ GESTOR DE TICKETS LOCALES
 class TicketManager(context: Context) {
     private val archivo = File(context.filesDir, "tickets_guardados.txt")
 
@@ -82,53 +83,59 @@ class TicketManager(context: Context) {
     }
 }
 
-// ✅ LISTA PERMANENTE
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
-var ultimoCodigoLeido = ""
 
-// ✅ ESCUCHA FIREBASE
+// ✅ ESCUCHA FIREBASE Y MARCA COMO LEÍDO
 fun escucharHistorialFirebase(context: Context) {
     gestorTickets = TicketManager(context)
     
     listaTickets.addAll(gestorTickets.cargar())
-    if (listaTickets.isNotEmpty()) {
-        ultimoCodigoLeido = listaTickets.last().codigo
-    }
     println("✅ Cargados ${listaTickets.size} tickets guardados")
 
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
             for (hijo in snapshot.children) {
-                val codigo = hijo.child("codigo").getValue(String::class.java) ?: ""
-                val monto = hijo.child("monto").getValue(Double::class.java) 
-                            ?: hijo.child("montoIngresado").getValue(Double::class.java) ?: 0.0
-                val fecha = hijo.child("fecha").getValue(String::class.java) 
-                            ?: hijo.child("fechaHora").getValue(String::class.java) ?: ""
-                val estado = hijo.child("estado").getValue(String::class.java) ?: "CREADO"
+                for (ticketNodo in hijo.children) {
+                    val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
+                    val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
+                    val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
+                    val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java)
+                    val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
 
-                if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
-                if (monto <= 0.0) continue
+                    if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
+                    if (monto <= 0.0) continue
+                    if (leidoPorTicket == true) continue // ✅ YA LO LEYÓ, NO REPETIR
 
-                if (listaTickets.none { it.codigo == codigo }) {
-                    val minutos = (monto * 100).toInt()
-                    val horas = minutos / 60
-                    val mins = minutos % 60
-                    val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
+                    // ✅ MARCAR COMO LEÍDO POR ESTA APP
+                    ticketNodo.ref.child("leido_por_ticket").setValue(true)
 
-                    val nuevoTicket = Ticket(
-                        codigo = codigo,
-                        monto = monto.toFloat(),
-                        minutos = minutos,
-                        tiempoStr = tiempoStr,
-                        fecha = fecha,
-                        estado = estado
-                    )
-                    listaTickets.add(nuevoTicket)
-                    ultimoCodigoLeido = codigo
-                    gestorTickets.guardar(listaTickets)
-                    println("✅ Guardado: $codigo — S/ $monto — $tiempoStr")
+                    // ✅ AGREGAR A LA LISTA SI NO EXISTE
+                    if (listaTickets.none { it.codigo == codigo }) {
+                        val minutos = (monto * 100).toInt()
+                        val horas = minutos / 60
+                        val mins = minutos % 60
+                        val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
+
+                        val nuevoTicket = Ticket(
+                            codigo = codigo,
+                            monto = monto.toFloat(),
+                            minutos = minutos,
+                            tiempoStr = tiempoStr,
+                            fecha = fecha,
+                            estado = "CREADO"
+                        )
+                        listaTickets.add(0, nuevoTicket) // ✅ MÁS RECIENTE ARRIBA
+                        gestorTickets.guardar(listaTickets)
+                        println("✅ Ticket leído y guardado: $codigo — S/ $monto")
+                    }
+
+                    // ✅ SI LAS DOS APPS LEYERON → BORRAR DE FIREBASE
+                    if (leidoPorMonedero) {
+                        ticketNodo.ref.removeValue()
+                        println("🗑️ Borrado de Firebase: $codigo (leído por ambas apps)")
+                    }
                 }
             }
         }
@@ -517,7 +524,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         onClick = {
                                             listaTickets.remove(ticket)
                                             gestorTickets.guardar(listaTickets)
-                                            println("🗑️ BORRADO: ${ticket.codigo}")
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -583,7 +589,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     onClick = {
                         ticketsFiltrados.forEach { listaTickets.remove(it) }
                         gestorTickets.guardar(listaTickets)
-                        println("🗑️ TODOS BORRADOS")
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -878,7 +883,6 @@ fun HistorialVentana(onCerrar: () -> Unit) {
                     onClick = {
                         listaTickets.clear()
                         gestorTickets.guardar(listaTickets)
-                        println("🗑️ HISTORIAL BORRADO")
                     },
                     modifier = Modifier
                         .fillMaxWidth()

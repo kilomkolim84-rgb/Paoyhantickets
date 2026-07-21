@@ -31,16 +31,13 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.io.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // ✅ INICIALIZAR ANTES DE USAR
         configMikrotik = MikrotikConfig(this)
         gestorTickets = TicketManager(this)
-        
         setContent {
             PantallaPrincipal()
         }
@@ -522,14 +519,16 @@ fun PantallaPrincipal() {
         Spacer(modifier = Modifier.height(20.dp))
 
         val configActual = configMikrotik.cargar(routerSeleccionado)
+        
+        // 🟢 TARJETA DE CONFIGURACIÓN — NO TOCADA ✅
         Card(
-            modifier = Modifier.fillMaxWidth().height(160.dp),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -560,6 +559,64 @@ fun PantallaPrincipal() {
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("DNS: ${configActual.dns.ifBlank { "No configurado" }}", fontSize = 14.sp, color = Color.Gray)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 🔵 PANEL DE ESTADO DEL ROUTER — DEBAJO DE LA VERDE
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "📊 VELOCIDAD Y ESTADO DEL ROUTER",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1565C0)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("⬆️ Subida", fontSize = 12.sp, color = Color.Gray)
+                        Text("— Mbps", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("⬇️ Bajada", fontSize = 12.sp, color = Color.Gray)
+                        Text("— Mbps", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🖥️ CPU", fontSize = 12.sp, color = Color.Gray)
+                        Text("— %", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("💾 RAM", fontSize = 12.sp, color = Color.Gray)
+                        Text("— %", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🌡️ Temperatura", fontSize = 12.sp, color = Color.Gray)
+                        Text("— °C", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    }
+                }
             }
         }
 
@@ -629,7 +686,7 @@ data class Ticket(
     val tiempoRestanteSeg: Int = 0
 )
 
-// ============= RESTO DE VENTANAS =============
+// ============= VENTANAS SECUNDARIAS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }

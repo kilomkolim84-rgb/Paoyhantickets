@@ -31,12 +31,16 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch  // ✅ FALTABA ESTA IMPORTACIÓN
+import kotlinx.coroutines.launch
 import java.io.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // ✅ INICIALIZAR ANTES DE USAR
+        configMikrotik = MikrotikConfig(this)
+        gestorTickets = TicketManager(this)
+        
         setContent {
             PantallaPrincipal()
         }
@@ -127,10 +131,7 @@ lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
 // ============= ESCUCHA FIREBASE =============
-fun escucharHistorialFirebase(context: Context) {
-    gestorTickets = TicketManager(context)
-    configMikrotik = MikrotikConfig(context)
-    
+fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
 
@@ -209,7 +210,7 @@ fun VentanaConfigMikrotik(
     var dns by remember { mutableStateOf(config.dns) }
     var probandoConexion by remember { mutableStateOf(false) }
     var mensajeEstado by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope() // ✅ CORRECTO
+    val scope = rememberCoroutineScope()
 
     Card(
         modifier = Modifier
@@ -304,7 +305,7 @@ fun VentanaConfigMikrotik(
                     onClick = {
                         probandoConexion = true
                         mensajeEstado = null
-                        scope.launch { // ✅ CORRECTO — dentro de scope.launch
+                        scope.launch {
                             delay(1500)
                             probandoConexion = false
                             mensajeEstado = if (ip.isNotBlank()) {
@@ -430,9 +431,8 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var abrirHistorial by remember { mutableStateOf(false) }
 
-    val contexto = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
-        escucharHistorialFirebase(contexto)
+        escucharHistorialFirebase()
     }
 
     val ticketsCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }

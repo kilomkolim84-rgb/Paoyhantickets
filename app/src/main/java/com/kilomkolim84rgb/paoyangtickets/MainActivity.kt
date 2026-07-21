@@ -31,7 +31,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch  // ✅ IMPORTACIÓN CORREGIDA
+import kotlinx.coroutines.launch
 import java.io.*
 
 class MainActivity : ComponentActivity() {
@@ -303,7 +303,7 @@ fun VentanaConfigMikrotik(
                     onClick = {
                         probandoConexion = true
                         mensajeEstado = null
-                        scope.launch {  // ✅ CORREGIDO: delay dentro de launch
+                        scope.launch {
                             delay(1500)
                             probandoConexion = false
                             mensajeEstado = if (ip.isNotBlank()) {
@@ -484,7 +484,7 @@ fun PantallaPrincipal() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "🎟️ PAOYANG TICKETS",
+            text = "🎟️ PAOYHAN TICKETS",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF2C3E50),
@@ -521,7 +521,7 @@ fun PantallaPrincipal() {
 
         val configActual = configMikrotik.cargar(routerSeleccionado)
         
-        // 🟢 TARJETA DE CONFIGURACIÓN — NO TOCADA ✅
+        // 🟢 TARJETA DE CONFIGURACIÓN
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -565,7 +565,7 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 🔵 PANEL DE ESTADO DEL ROUTER — DEBAJO DE LA VERDE
+        // 🔵 PANEL DE ESTADO DEL ROUTER
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),

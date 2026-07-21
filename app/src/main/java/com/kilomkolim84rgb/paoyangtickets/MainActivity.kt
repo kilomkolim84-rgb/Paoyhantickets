@@ -31,6 +31,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch  // ✅ FALTABA ESTA IMPORTACIÓN
 import java.io.*
 
 class MainActivity : ComponentActivity() {
@@ -208,7 +209,7 @@ fun VentanaConfigMikrotik(
     var dns by remember { mutableStateOf(config.dns) }
     var probandoConexion by remember { mutableStateOf(false) }
     var mensajeEstado by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope() // ✅ CORRECTO
 
     Card(
         modifier = Modifier
@@ -286,7 +287,6 @@ fun VentanaConfigMikrotik(
             )
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Mensaje de estado
             mensajeEstado?.let { msg ->
                 Text(
                     text = msg,
@@ -304,8 +304,8 @@ fun VentanaConfigMikrotik(
                     onClick = {
                         probandoConexion = true
                         mensajeEstado = null
-                        scope.launch {
-                            delay(1500) // Simulación de prueba
+                        scope.launch { // ✅ CORRECTO — dentro de scope.launch
+                            delay(1500)
                             probandoConexion = false
                             mensajeEstado = if (ip.isNotBlank()) {
                                 "✅ Conexión exitosa con $ip"
@@ -385,7 +385,6 @@ fun TarjetaRouter(
         border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Botón de engranaje arriba a la derecha
             IconButton(
                 onClick = alConfigurar,
                 modifier = Modifier
@@ -462,7 +461,6 @@ fun PantallaPrincipal() {
         }
     }
 
-    // Diálogos de configuración
     if (abrirConfigRouter1) {
         Dialog(onDismissRequest = { abrirConfigRouter1 = false }) {
             VentanaConfigMikrotik(routerId = 1, nombreRouter = "ROUTER #1", onCerrar = { abrirConfigRouter1 = false })
@@ -523,7 +521,6 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Datos del router seleccionado
         val configActual = configMikrotik.cargar(routerSeleccionado)
         Card(
             modifier = Modifier.fillMaxWidth().height(160.dp),
@@ -632,7 +629,7 @@ data class Ticket(
     val tiempoRestanteSeg: Int = 0
 )
 
-// ============= RESTO DE VENTANAS (IGUALES) =============
+// ============= RESTO DE VENTANAS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var textoBuscar by remember { mutableStateOf("") }

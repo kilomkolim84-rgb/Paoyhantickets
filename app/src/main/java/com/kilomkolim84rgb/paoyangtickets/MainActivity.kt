@@ -33,6 +33,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch  // ✅ FALTABA ESTA IMPORTACIÓN
 import java.io.*
 
 class MainActivity : ComponentActivity() {
@@ -152,7 +153,6 @@ fun escucharHistorialFirebase() {
                     if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                     if (monto <= 0.0) continue
                     if (leidoPorTicket == true) {
-                        // 🗑️ BORRAR SI LAS DOS APPS YA LEERON
                         if (leidoPorMonedero == true) {
                             Handler(Looper.getMainLooper()).postDelayed({
                                 ticketNodo.ref.removeValue()
@@ -188,7 +188,6 @@ fun escucharHistorialFirebase() {
                         println("✅ Ticket leído y guardado: $codigo — S/ $monto")
                     }
 
-                    // 🗑️ BORRAR SI LAS DOS YA LEERON
                     if (leidoPorMonedero) {
                         Handler(Looper.getMainLooper()).postDelayed({
                             ticketNodo.ref.removeValue()
@@ -462,7 +461,7 @@ fun PantallaPrincipal() {
     // ⏱️ RELOJ EN TIEMPO REAL — CUENTA SOLO HASTA 0
     LaunchedEffect(Unit) {
         while (true) {
-            delay(1000)  // ⏳ Cada 1 segundo
+            delay(1000)
             
             var huboCambio = false
             
@@ -471,7 +470,6 @@ fun PantallaPrincipal() {
                     val nuevoTiempo = ticket.tiempoRestanteSeg - 1
                     
                     if (nuevoTiempo <= 0) {
-                        // ⏰ SE VENCIÓ SOLO
                         listaTickets[index] = ticket.copy(
                             estado = "VENCIDO",
                             tiempoRestanteSeg = 0,
@@ -480,7 +478,6 @@ fun PantallaPrincipal() {
                         )
                         huboCambio = true
                     } else {
-                        // ⏳ SIGUE CONTANDO SOLO
                         listaTickets[index] = ticket.copy(
                             tiempoRestanteSeg = nuevoTiempo
                         )
@@ -573,7 +570,6 @@ fun PantallaPrincipal() {
 
         val configActual = configMikrotik.cargar(routerSeleccionado)
         
-        // 🟢 TARJETA DE CONFIGURACIÓN
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -617,7 +613,6 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 🔵 PANEL DE ESTADO DEL ROUTER
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -916,6 +911,7 @@ fun TicketsVencidosVentana(onCerrar: () -> Unit) {
         }
     }
 }
+
 // ============= VENTANA HISTORIAL COMPLETO =============
 @Composable
 fun HistorialVentana(onCerrar: () -> Unit) {

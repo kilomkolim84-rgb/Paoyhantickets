@@ -912,4 +912,115 @@ fun TicketsVencidosVentana(onCerrar: () -> Unit) {
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR", fontSize = 1
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR", fontSize = 16.sp) }
+        }
+    }
+}
+// ============= VENTANA HISTORIAL COMPLETO =============
+@Composable
+fun HistorialVentana(onCerrar: () -> Unit) {
+    var textoBuscar by remember { mutableStateOf("") }
+    val ticketsFiltrados = remember(textoBuscar, listaTickets.size) {
+        listaTickets.filter {
+            it.codigo.contains(textoBuscar, ignoreCase = true) ||
+            it.nombreUsuario.contains(textoBuscar, ignoreCase = true)
+        }
+    }
+
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(24.dp).height(550.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("📋 HISTORIAL COMPLETO (${ticketsFiltrados.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6366F1))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = textoBuscar,
+                onValueChange = { textoBuscar = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Buscar por código o usuario...") },
+                leadingIcon = { Icon(Icons.Default.Search, "Buscar") },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).weight(1f)) {
+                if (ticketsFiltrados.isEmpty()) {
+                    Text("📭 No hay tickets en el historial", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                } else {
+                    ticketsFiltrados.forEach { ticket ->
+                        val colorFondo = when (ticket.estado) {
+                            "CREADO" -> Color(0xFFE3F2FD)
+                            "ACTIVO" -> Color(0xFFE8F5E9)
+                            "PAUSADO" -> Color(0xFFFFF8E1)
+                            "VENCIDO" -> Color(0xFFFFEBEE)
+                            else -> Color(0xFFFFFFFF)
+                        }
+                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(colorFondo)) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text("🆔 ${ticket.codigo}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Text("💰 S/ ${String.format("%.2f", ticket.monto)}  •  ⏱️ ${ticket.tiempoStr}", fontSize = 13.sp)
+                                Text("📅 ${ticket.fecha}", fontSize = 12.sp, color = Color.Gray)
+                                Text("👤 ${ticket.nombreUsuario}  •  🌐 ${ticket.ipUsuario}", fontSize = 12.sp, color = Color.Gray)
+                                Text("Estado: ${ticket.estado}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = when (ticket.estado) {
+                                    "CREADO" -> Color(0xFF6366F1)
+                                    "ACTIVO" -> Color(0xFF22C55E)
+                                    "PAUSADO" -> Color(0xFFF59E0B)
+                                    "VENCIDO" -> Color(0xFFEF4444)
+                                    else -> Color.Gray
+                                })
+                                if (ticket.estado == "ACTIVO") {
+                                    Text("📤 ${ticket.velocidadSubida}  •  📥 ${ticket.velocidadBajada}", fontSize = 12.sp, color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (listaTickets.isNotEmpty()) {
+                var confirmarBorrarTodo by remember { mutableStateOf(false) }
+                Button(
+                    onClick = { confirmarBorrarTodo = true },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))
+                ) {
+                    Text("🗑️ BORRAR TODO EL HISTORIAL", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+
+                if (confirmarBorrarTodo) {
+                    AlertDialog(
+                        onDismissRequest = { confirmarBorrarTodo = false },
+                        title = { Text("⚠️ Confirmar borrado") },
+                        text = { Text("¿Seguro que quieres borrar TODOS los tickets del historial? Esta acción no se puede deshacer.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                listaTickets.clear()
+                                gestorTickets.guardar(listaTickets)
+                                confirmarBorrarTodo = false
+                            }) {
+                                Text("✅ SÍ, BORRAR TODO", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmarBorrarTodo = false }) {
+                                Text("❌ CANCELAR")
+                            }
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}

@@ -446,31 +446,42 @@ fun PantallaPrincipal() {
     val ticketsPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
     val ticketsVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // ⏱️ Tiempo real y velocidad simulada
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            var huboCambio = false
-            listaTickets.forEachIndexed { index, ticket ->
-                if (ticket.estado == "ACTIVO") {
-                    val nuevoTiempo = ticket.tiempoRestanteSeg - 1
-                    if (nuevoTiempo <= 0) {
-                        listaTickets[index] = ticket.copy(
-                            estado = "VENCIDO",
-                            tiempoRestanteSeg = 0,
-                            velocidadSubida = "— Mbps",
-                            velocidadBajada = "— Mbps"
-                        )
-                        huboCambio = true
-                    } else {
-                        listaTickets[index] = ticket.copy(tiempoRestanteSeg = nuevoTiempo)
-                        huboCambio = true
-                    }
+    // ⏱️ RELOJ EN TIEMPO REAL — CUENTA SOLO HASTA 0
+LaunchedEffect(Unit) {
+    while (true) {
+        delay(1000)  // ⏳ Cada 1 segundo
+        
+        var huboCambio = false
+        
+        listaTickets.forEachIndexed { index, ticket ->
+            if (ticket.estado == "ACTIVO") {
+                val nuevoTiempo = ticket.tiempoRestanteSeg - 1
+                
+                if (nuevoTiempo <= 0) {
+                    // ⏰ SE VENCIÓ SOLO
+                    listaTickets[index] = ticket.copy(
+                        estado = "VENCIDO",
+                        tiempoRestanteSeg = 0,
+                        velocidadSubida = "-- Mbps",
+                        velocidadBajada = "-- Mbps"
+                    )
+                    huboCambio = true
+                } else {
+                    // ⏳ SIGUE CONTANDO SOLO
+                    listaTickets[index] = ticket.copy(
+                        tiempoRestanteSeg = nuevoTiempo
+                    )
+                    huboCambio = true
                 }
             }
-            if (huboCambio) gestorTickets.guardar(listaTickets)
+        }
+        
+        if (huboCambio) {
+            gestorTickets.guardar(listaTickets)
         }
     }
+}
+
 
     // 📊 Actualizar velocidad cada 3 segundos
     LaunchedEffect(Unit) {

@@ -162,13 +162,7 @@ fun escucharHistorialFirebase() {
                             // Cambia el estado en la lista
                             listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO - EN USO")
                             gestorTickets.guardar(listaTickets)
-                            
-                            // 📢 MUESTRA EL AVISO EN PANTALLA INMEDIATAMENTE
-                                android.widget.Toast.makeText(
-                                    applicationContext,
-                                    "📢 AVISO: CÓDIGO $codigo YA FUE ACTIVADO / EN USO",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
+                          
                         }
                     }
 

@@ -205,7 +205,6 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
     var clave by remember { mutableStateOf(config.clave) }
     var dns by remember { mutableStateOf(config.dns) }
     var mensajeEstado by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
 
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
         Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -283,7 +282,7 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // ==================== BLOQUE CORREGIDO ====================
+    // BLOQUE DEL RELOJ - ARREGLADO DEFINITIVAMENTE
     LaunchedEffect(Unit) {
         trabajoReloj = launch {
             while (true) {
@@ -307,13 +306,7 @@ fun PantallaPrincipal() {
                 }
             }
         }
-
-        invokeOnCompletion {
-            trabajoReloj?.cancel()
-            trabajoReloj = null
-        }
     }
-    // ===========================================================
 
     if (abrirConfig1) Dialog(onDismissRequest = { abrirConfig1 = false }) { VentanaConfigMikrotik(1, "ROUTER #1") { abrirConfig1 = false } }
     if (abrirConfig2) Dialog(onDismissRequest = { abrirConfig2 = false }) { VentanaConfigMikrotik(2, "ROUTER #2") { abrirConfig2 = false } }
@@ -397,7 +390,7 @@ data class Ticket(
     val nombreUsuario: String = "Sin asignar"
 )
 
-// ============= VENTANAS COMPLETAS =============
+// ============= VENTANAS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }

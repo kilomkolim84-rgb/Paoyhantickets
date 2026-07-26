@@ -59,7 +59,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ============= GESTOR DE CONFIGURACIÓN MIKROTIK =============
 class MikrotikConfig(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
 
@@ -92,7 +91,6 @@ class MikrotikConfig(context: Context) {
     }
 }
 
-// ============= GESTOR DE TICKETS =============
 class TicketManager(context: Context) {
     private val archivo = File(context.filesDir, "tickets_guardados.txt")
 
@@ -139,7 +137,6 @@ class TicketManager(context: Context) {
     }
 }
 
-// ============= ESCUCHA FIREBASE =============
 fun escucharHistorialFirebase() {
     MainActivity.listaTickets.addAll(MainActivity.gestorTickets.cargar())
     println("✅ Cargados ${MainActivity.listaTickets.size} tickets guardados")
@@ -199,7 +196,6 @@ fun formatearTiempo(segundos: Int): String {
     return String.format("%02d:%02d:%02d", h, m, s)
 }
 
-// ============= VENTANA CONFIGURACIÓN =============
 @Composable
 fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> Unit) {
     val contexto = androidx.compose.ui.platform.LocalContext.current
@@ -246,7 +242,6 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
     }
 }
 
-// ============= TARJETA ROUTER =============
 @Composable
 fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: Boolean, alTocar: () -> Unit, alConfigurar: () -> Unit) {
     val config = remember { MainActivity.configMikrotik.cargar(routerId) }
@@ -269,7 +264,6 @@ fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: B
     }
 }
 
-// ============= PANTALLA PRINCIPAL =============
 @Composable
 fun PantallaPrincipal() {
     var routerSeleccionado by remember { mutableStateOf(1) }
@@ -287,7 +281,6 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // ✅ CONTADOR DE TIEMPO ARREGLADO
     LaunchedEffect(Unit) {
         MainActivity.trabajoReloj = launch {
             while (true) {
@@ -396,7 +389,6 @@ data class Ticket(
     val nombreUsuario: String = "Sin asignar"
 )
 
-// ============= VENTANAS DE TICKETS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }

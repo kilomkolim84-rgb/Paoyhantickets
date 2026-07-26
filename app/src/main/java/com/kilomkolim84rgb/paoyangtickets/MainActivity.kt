@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -27,9 +28,11 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.zxing.BarcodeFormat
-import com.zxing.qrcode.QRCodeWriter
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.*
 
 class MainActivity : ComponentActivity() {
@@ -45,6 +48,7 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
+// ============= GESTOR DE CONFIGURACIÓN MIKROTIK =============
 class MikrotikConfig(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
 
@@ -79,6 +83,7 @@ class MikrotikConfig(context: Context) {
 
 lateinit var configMikrotik: MikrotikConfig
 
+// ============= GESTOR DE TICKETS =============
 class TicketManager(context: Context) {
     private val archivo = File(context.filesDir, "tickets_guardados.txt")
 
@@ -128,6 +133,7 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
+// ============= ESCUCHA FIREBASE =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
@@ -140,14 +146,16 @@ fun escucharHistorialFirebase() {
                     val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
                     val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
                     val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
-                    val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java)
+                    val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java) ?: false
                     val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
+                    val leidoPorPortal = ticketNodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
 
                     if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                     if (monto <= 0.0) continue
-                    if (leidoPorTicket == true) continue
 
-                    ticketNodo.ref.child("leido_por_ticket").setValue(true)
+                    if (!leidoPorTicket) {
+                        ticketNodo.ref.child("leido_por_ticket").setValue(true)
+                    }
 
                     if (listaTickets.none { it.codigo == codigo }) {
                         val minutos = (monto * 100).toInt()
@@ -155,30 +163,26 @@ fun escucharHistorialFirebase() {
                         val mins = minutos % 60
                         val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
 
-                        val nuevoTicket = Ticket(
+                        listaTickets.add(0, Ticket(
                             codigo = codigo,
                             monto = monto.toFloat(),
                             minutos = minutos,
                             tiempoStr = tiempoStr,
                             fecha = fecha,
                             estado = "CREADO",
-                            tiempoRestanteSeg = minutos * 60,
-                            velocidadSubida = "— Mbps",
-                            velocidadBajada = "— Mbps",
-                            ipUsuario = "Sin asignar",
-                            nombreUsuario = "Sin asignar"
-                        )
-                        listaTickets.add(0, nuevoTicket)
+                            tiempoRestanteSeg = minutos * 60
+                        ))
                         gestorTickets.guardar(listaTickets)
-                        println("✅ Ticket leído y guardado: $codigo — S/ $monto")
+                    }
+
+                    if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
+                        ticketNodo.ref.removeValue()
                     }
                 }
             }
         }
 
-        override fun onCancelled(error: DatabaseError) {
-            println("❌ Error Firebase: ${error.message}")
-        }
+        override fun onCancelled(error: DatabaseError) {}
     })
 }
 
@@ -189,12 +193,9 @@ fun formatearTiempo(segundos: Int): String {
     return String.format("%02d:%02d:%02d", h, m, s)
 }
 
+// ============= VENTANA CONFIGURACIÓN =============
 @Composable
-fun VentanaConfigMikrotik(
-    routerId: Int,
-    nombreRouter: String,
-    onCerrar: () -> Unit
-) {
+fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> Unit) {
     val contexto = androidx.compose.ui.platform.LocalContext.current
     val config = remember { configMikrotik.cargar(routerId) }
 
@@ -203,488 +204,168 @@ fun VentanaConfigMikrotik(
     var usuario by remember { mutableStateOf(config.usuario) }
     var clave by remember { mutableStateOf(config.clave) }
     var dns by remember { mutableStateOf(config.dns) }
-    var probandoConexion by remember { mutableStateOf(false) }
     var mensajeEstado by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Top
-        ) {
-            Text(
-                text = "⚙️ CONFIGURACIÓN — $nombreRouter",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1565C0)
-            )
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
+        Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("⚙️ CONFIGURACIÓN — $nombreRouter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
             Spacer(modifier = Modifier.height(24.dp))
 
-            OutlinedTextField(
-                value = ip,
-                onValueChange = { ip = it },
-                label = { Text("IP Mikrotik") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                placeholder = { Text("192.168.88.1") }
-            )
+            OutlinedTextField(ip, { ip = it }, label = { Text("IP Mikrotik") }, modifier = Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("192.168.88.1") })
             Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = puerto,
-                onValueChange = { puerto = it },
-                label = { Text("Puerto API") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                placeholder = { Text("8728") }
-            )
+            OutlinedTextField(puerto, { puerto = it }, label = { Text("Puerto API") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = usuario,
-                onValueChange = { usuario = it },
-                label = { Text("Usuario") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                placeholder = { Text("admin") }
-            )
+            OutlinedTextField(usuario, { usuario = it }, label = { Text("Usuario") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = clave,
-                onValueChange = { clave = it },
-                label = { Text("Contraseña") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                shape = RoundedCornerShape(10.dp),
-                placeholder = { Text("••••••••") }
-            )
+            OutlinedTextField(clave, { clave = it }, label = { Text("Contraseña") }, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = dns,
-                onValueChange = { dns = it },
-                label = { Text("DNS Name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp),
-                placeholder = { Text("mikrotik1.net") }
-            )
+            OutlinedTextField(dns, { dns = it }, label = { Text("DNS") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(modifier = Modifier.height(20.dp))
 
-            mensajeEstado?.let { msg ->
-                Text(
-                    text = msg,
-                    fontSize = 14.sp,
-                    color = if (msg.contains("✅")) Color(0xFF22C55E) else Color(0xFFEF4444),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+            mensajeEstado?.let { Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { mensajeEstado = if (ip.isNotBlank()) "✅ Conexión válida" else "❌ Ingrese la IP" }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
+                Button(onClick = {
+                    if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
+                    configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, puerto, usuario, clave, dns))
+                    mensajeEstado = "✅ Guardado"
+                    Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
+                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = {
-                        probandoConexion = true
-                        mensajeEstado = null
-                        scope.launch {
-                            delay(1500)
-                            probandoConexion = false
-                            mensajeEstado = if (ip.isNotBlank()) {
-                                "✅ Conexión exitosa con $ip"
-                            } else {
-                                "❌ Error: Ingrese la IP"
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f).height(55.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                    enabled = !probandoConexion
-                ) {
-                    if (probandoConexion) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                    } else {
-                        Text("🧪 PROBAR CONEXIÓN", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        if (ip.isBlank()) {
-                            mensajeEstado = "❌ La IP es obligatoria"
-                            return@Button
-                        }
-                        configMikrotik.guardar(
-                            routerId,
-                            MikrotikConfig.Config(ip, puerto, usuario, clave, dns)
-                        )
-                        mensajeEstado = "✅ ¡Guardado correctamente!"
-                    },
-                    modifier = Modifier.weight(1f).height(55.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
-                ) {
-                    Text("💾 GUARDAR", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = onCerrar,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
-            ) {
-                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) { Text("CERRAR") }
         }
     }
 }
 
+// ============= TARJETA ROUTER =============
 @Composable
-fun TarjetaRouter(
-    nombre: String,
-    modelo: String,
-    ip: String,
-    puerto: String,
-    routerId: Int,
-    seleccionado: Boolean,
-    alTocar: () -> Unit,
-    alConfigurar: () -> Unit
-) {
-    Card(
-        onClick = alTocar,
-        modifier = Modifier
-            .width(160.dp)
-            .height(145.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (seleccionado) Color(0xFFE3F2FD) else Color(0xFFFFFFFF)
-        ),
+fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: Boolean, alTocar: () -> Unit, alConfigurar: () -> Unit) {
+    val config = remember { configMikrotik.cargar(routerId) }
+    Card(onClick = alTocar, modifier = Modifier.width(160.dp).height(145.dp), shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(if (seleccionado) Color(0xFFE3F2FD) else Color.White),
         border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            IconButton(
-                onClick = alConfigurar,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Configurar",
-                    tint = Color(0xFF6366F1)
-                )
+        Box {
+            IconButton(onClick = alConfigurar, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+                Icon(Icons.Default.Settings, null, tint = Color(0xFF6366F1))
             }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 32.dp, start = 12.dp, end = 12.dp, bottom = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+            Column(modifier = Modifier.padding(top = 32.dp, start = 12.dp, end = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Text(modelo, fontSize = 12.sp, color = Color.Gray)
                 Spacer(modifier = Modifier.height(6.dp))
-                
-                val config = remember { configMikrotik.cargar(routerId) }
-                Text("IP: ${if (config.ip.isNotEmpty()) config.ip else "No config"}", fontSize = 11.sp)
-                Text("Puerto: ${if (config.puerto.isNotEmpty()) config.puerto else "8728"}", fontSize = 11.sp)
+                Text("IP: ${config.ip.ifBlank { "Sin config" }}", fontSize = 11.sp)
+                Text("Puerto: ${config.puerto}", fontSize = 11.sp)
             }
         }
     }
 }
 
+// ============= PANTALLA PRINCIPAL =============
 @Composable
 fun PantallaPrincipal() {
     var routerSeleccionado by remember { mutableStateOf(1) }
-    var abrirConfigRouter1 by remember { mutableStateOf(false) }
-    var abrirConfigRouter2 by remember { mutableStateOf(false) }
-    var abrirTicketsCreados by remember { mutableStateOf(false) }
+    var abrirConfig1 by remember { mutableStateOf(false) }
+    var abrirConfig2 by remember { mutableStateOf(false) }
+    var abrirCreados by remember { mutableStateOf(false) }
     var abrirActivos by remember { mutableStateOf(false) }
     var abrirPausados by remember { mutableStateOf(false) }
     var abrirVencidos by remember { mutableStateOf(false) }
     var abrirHistorial by remember { mutableStateOf(false) }
+    var trabajoReloj: Job? = null
+
+    LaunchedEffect(Unit) { escucharHistorialFirebase() }
+    val cCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
+    val cActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
+    val cPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
+    val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
     LaunchedEffect(Unit) {
-        escucharHistorialFirebase()
-    }
-
-    val ticketsCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
-    val ticketsActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
-    val ticketsPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
-    val ticketsVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            var huboCambio = false
-            listaTickets.forEachIndexed { index, ticket ->
-                if (ticket.estado == "ACTIVO") {
-                    val nuevoTiempo = ticket.tiempoRestanteSeg - 1
-                    if (nuevoTiempo <= 0) {
-                        listaTickets[index] = ticket.copy(
-                            estado = "VENCIDO",
-                            tiempoRestanteSeg = 0,
-                            velocidadSubida = "-- Mbps",
-                            velocidadBajada = "-- Mbps"
-                        )
-                        huboCambio = true
-                    } else {
-                        listaTickets[index] = ticket.copy(tiempoRestanteSeg = nuevoTiempo)
-                        huboCambio = true
+        trabajoReloj = launch {
+            while (isActive) {
+                delay(1000)
+                var cambio = false
+                listaTickets.forEachIndexed { i, t ->
+                    if (t.estado == "ACTIVO") {
+                        val nuevo = t.tiempoRestanteSeg - 1
+                        listaTickets[i] = if (nuevo <= 0) t.copy(estado = "VENCIDO", tiempoRestanteSeg = 0) else t.copy(tiempoRestanteSeg = nuevo)
+                        cambio = true
                     }
                 }
+                if (cambio) gestorTickets.guardar(listaTickets)
             }
-            if (huboCambio) gestorTickets.guardar(listaTickets)
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(3000)
-            listaTickets.forEachIndexed { index, ticket ->
-                if (ticket.estado == "ACTIVO") {
-                    listaTickets[index] = ticket.copy(
-                        velocidadSubida = "${(0..50).random()}.${(0..9).random()} Mbps",
-                        velocidadBajada = "${(5..100).random()}.${(0..9).random()} Mbps"
-                    )
-                }
-            }
-            gestorTickets.guardar(listaTickets)
-        }
-    }
-
-    if (abrirConfigRouter1) Dialog(onDismissRequest = { abrirConfigRouter1 = false }) { VentanaConfigMikrotik(routerId = 1, nombreRouter = "ROUTER #1", onCerrar = { abrirConfigRouter1 = false }) }
-    if (abrirConfigRouter2) Dialog(onDismissRequest = { abrirConfigRouter2 = false }) { VentanaConfigMikrotik(routerId = 2, nombreRouter = "ROUTER #2", onCerrar = { abrirConfigRouter2 = false }) }
-    if (abrirTicketsCreados) Dialog(onDismissRequest = { abrirTicketsCreados = false }) { TicketsCreadosVentana { abrirTicketsCreados = false } }
+    if (abrirConfig1) Dialog(onDismissRequest = { abrirConfig1 = false }) { VentanaConfigMikrotik(1, "ROUTER #1") { abrirConfig1 = false } }
+    if (abrirConfig2) Dialog(onDismissRequest = { abrirConfig2 = false }) { VentanaConfigMikrotik(2, "ROUTER #2") { abrirConfig2 = false } }
+    if (abrirCreados) Dialog(onDismissRequest = { abrirCreados = false }) { TicketsCreadosVentana { abrirCreados = false } }
     if (abrirActivos) Dialog(onDismissRequest = { abrirActivos = false }) { TicketsActivosVentana { abrirActivos = false } }
     if (abrirPausados) Dialog(onDismissRequest = { abrirPausados = false }) { TicketsPausadosVentana { abrirPausados = false } }
     if (abrirVencidos) Dialog(onDismissRequest = { abrirVencidos = false }) { TicketsVencidosVentana { abrirVencidos = false } }
     if (abrirHistorial) Dialog(onDismissRequest = { abrirHistorial = false }) { HistorialVentana { abrirHistorial = false } }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
-    ) {
-        Text(
-            text = "🎟️ PAOYHAN TICKETS",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF2C3E50),
-            modifier = Modifier.padding(bottom = 20.dp, top = 16.dp)
-        )
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("🎟️ PAOYHAN TICKETS", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(vertical = 16.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TarjetaRouter(
-                nombre = "📡 Router #1",
-                modelo = "RB750Gr3",
-                ip = "192.168.88.1",
-                puerto = "Balanceador",
-                routerId = 1,
-                seleccionado = routerSeleccionado == 1,
-                alTocar = { routerSeleccionado = 1 },
-                alConfigurar = { abrirConfigRouter1 = true }
-            )
-            TarjetaRouter(
-                nombre = "📡 Router #2",
-                modelo = "RB3011",
-                ip = "192.168.88.1",
-                puerto = "Administración",
-                routerId = 2,
-                seleccionado = routerSeleccionado == 2,
-                alTocar = { routerSeleccionado = 2 },
-                alConfigurar = { abrirConfigRouter2 = true }
-            )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            TarjetaRouter("📡 Router #1", "RB750Gr3", 1, routerSeleccionado == 1, { routerSeleccionado = 1 }, { abrirConfig1 = true })
+            TarjetaRouter("📡 Router #2", "RB3011", 2, routerSeleccionado == 2, { routerSeleccionado = 2 }, { abrirConfig2 = true })
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-
-        val configActual = configMikrotik.cargar(routerSeleccionado)
-        
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
-            ) {
-                Text(
-                    text = "📡 CONFIGURACIÓN — Router #$routerSeleccionado",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32)
-                )
+        val configActual = remember(routerSeleccionado) { configMikrotik.cargar(routerSeleccionado) }
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
+            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("📡 CONFIGURACIÓN — Router #$routerSeleccionado", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                 Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("IP", fontSize = 12.sp, color = Color.Gray)
-                        Text(configActual.ip.ifBlank { "No configurada" }, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("Puerto", fontSize = 12.sp, color = Color.Gray)
-                        Text(configActual.puerto, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("Usuario", fontSize = 12.sp, color = Color.Gray)
-                        Text(configActual.usuario, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Column { Text("IP", fontSize = 12.sp, color = Color.Gray); Text(configActual.ip.ifBlank { "Sin configurar" }, fontWeight = FontWeight.Bold) }
+                    Column { Text("Puerto", fontSize = 12.sp, color = Color.Gray); Text(configActual.puerto, fontWeight = FontWeight.Bold) }
+                    Column { Text("Usuario", fontSize = 12.sp, color = Color.Gray); Text(configActual.usuario, fontWeight = FontWeight.Bold) }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("DNS: ${configActual.dns.ifBlank { "No configurado" }}", fontSize = 14.sp, color = Color.Gray)
+                Text("DNS: ${configActual.dns.ifBlank { "Sin configurar" }}", fontSize = 14.sp, color = Color.Gray)
             }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(onClick = { abrirCreados = true }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(12.dp)) {
+            Text("📋 TICKETS CREADOS ($cCreados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
-            ) {
-                Text(
-                    text = "📊 VELOCIDAD Y ESTADO DEL ROUTER",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1565C0)
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("⬆️ Subida", fontSize = 12.sp, color = Color.Gray)
-                        Text("— Mbps", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("⬇️ Bajada", fontSize = 12.sp, color = Color.Gray)
-                        Text("— Mbps", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("🖥️ CPU", fontSize = 12.sp, color = Color.Gray)
-                        Text("— %", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("💾 RAM", fontSize = 12.sp, color = Color.Gray)
-                        Text("— %", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterVertically) {
-                        Text("🌡️ Temperatura", fontSize = 12.sp, color = Color.Gray)
-                        Text("— °C", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Button(
-            onClick = { abrirTicketsCreados = true },
-            modifier = Modifier.fillMaxWidth().height(70.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
-        ) {
-            Text("📋 TICKETS CREADOS ($ticketsCreados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana("🟢 ACTIVOS ($ticketsActivos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
-            BotonPestana("🟡 PAUSADOS ($ticketsPausados)", Color(0xFFF59E0B), Modifier.weight(1f)) { abrirPausados = true }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BotonPestana("🟢 ACTIVOS ($cActivos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
+            BotonPestana("🟡 PAUSADOS ($cPausados)", Color(0xFFF59E0B), Modifier.weight(1f)) { abrirPausados = true }
         }
         Spacer(modifier = Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BotonPestana("🔴 VENCIDOS ($ticketsVencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BotonPestana("🔴 VENCIDOS ($cVencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
             BotonPestana("📋 HISTORIAL (${listaTickets.size})", Color(0xFF6366F1), Modifier.weight(1f)) { abrirHistorial = true }
         }
     }
 }
 
 @Composable
-fun BotonPestana(
-    texto: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-    alTocar: () -> Unit
-) {
-    Button(
-        onClick = alTocar,
-        modifier = modifier.height(55.dp),
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = color)
-    ) {
+fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier, alTocar: () -> Unit) {
+    Button(onClick = alTocar, modifier = modifier.height(55.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(color)) {
         Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
-    val escritor = QRCodeWriter()
-    val matrizBit = escritor.encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
-    val ancho = matrizBit.width
-    val alto = matrizBit.height
-    val bitmap = Bitmap.createBitmap(ancho, alto, Bitmap.Config.RGB_565)
-    for (x in 0 until ancho) {
-        for (y in 0 until alto) {
-            bitmap.setPixel(x, y, if (matrizBit[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
+    val matriz = QRCodeWriter().encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
+    return Bitmap.createBitmap(tamano, tamano, Bitmap.Config.RGB_565).apply {
+        for (x in 0 until tamano) {
+            for (y in 0 until tamano) {
+                setPixel(x, y, if (matriz[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
+            }
         }
     }
-    return bitmap
 }
 
 data class Ticket(
@@ -701,342 +382,179 @@ data class Ticket(
     val nombreUsuario: String = "Sin asignar"
 )
 
+// ============= VENTANAS COMPLETAS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
-    var textoBuscar by remember { mutableStateOf("") }
-    val ticketsFiltrados = remember(textoBuscar, listaTickets.size) {
-        listaTickets.filter { it.estado == "CREADO" }.let { lista ->
-            if (textoBuscar.isBlank()) lista
-            else lista.filter { it.codigo.contains(textoBuscar, ignoreCase = true) }
-        }
+    var buscar by remember { mutableStateOf("") }
+    val filtro = remember(buscar, listaTickets.size) {
+        listaTickets.filter { it.estado == "CREADO" && (buscar.isBlank() || it.codigo.contains(buscar, true)) }
     }
-
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
-        Column(modifier = Modifier.padding(24.dp).height(550.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
-            Text("📋 TICKETS CREADOS (${ticketsFiltrados.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.padding(24.dp).height(550.dp)) {
+            Text("📋 TICKETS CREADOS (${filtro.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(value = textoBuscar, onValueChange = { textoBuscar = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar por código...") }, leadingIcon = { Icon(Icons.Default.Search, "Buscar") }, singleLine = true, shape = RoundedCornerShape(10.dp))
+            OutlinedTextField(buscar, { buscar = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar código") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).weight(1f)) {
-                if (ticketsFiltrados.isEmpty()) Text("📭 No hay tickets creados aún\nMete monedas en el cajero", color = Color.Gray, modifier = Modifier.padding(16.dp), fontSize = 15.sp)
-                else ticketsFiltrados.forEach { ticket ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f)) {
+                if (filtro.isEmpty()) Text("📭 Sin tickets creados", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else filtro.forEach { t ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("🆔 ${ticket.codigo}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                Text("💰 S/ ${String.format("%.2f", ticket.monto)}", fontSize = 13.sp, color = Color(0xFF22C55E))
-                                Text("⏱️ ${ticket.tiempoStr}", fontSize = 13.sp, color = Color.Gray)
-                                Text("📅 ${ticket.fecha}", fontSize = 12.sp, color = Color.Gray)
-                                Text("⚪ CREADO — Pendiente de activar", fontSize = 12.sp, color = Color(0xFF6366F1))
+                                Text("🆔 ${t.codigo}", fontWeight = FontWeight.Bold)
+                                Text("💰 S/ %.2f".format(t.monto), color = Color(0xFF22C55E))
+                                Text("⏱️ ${t.tiempoStr}", color = Color.Gray)
+                                Text("📅 ${t.fecha}", fontSize = 12.sp, color = Color.Gray)
                             }
-                            var mostrarQR by remember { mutableStateOf(false) }
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { 
-                                    val i = listaTickets.indexOf(ticket)
-                                    if (i >= 0) { 
-                                        listaTickets[i] = ticket.copy(
-                                            estado = "ACTIVO", 
-                                            tiempoRestanteSeg = ticket.minutos * 60,
-                                            velocidadSubida = "0.0 Mbps",
-                                            velocidadBajada = "0.0 Mbps"
-                                        )
-                                        gestorTickets.guardar(listaTickets) 
-                                    } 
-                                }, colors = ButtonDefaults.buttonColors(Color(0xFF22C55E)), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), modifier = Modifier.height(36.dp)) { Text("✅ ACTIVAR", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-                                Button(onClick = { mostrarQR = true }, colors = ButtonDefaults.buttonColors(Color(0xFF2563EB)), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), modifier = Modifier.height(36.dp)) { Text("📱 QR", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-                                Button(onClick = { listaTickets.remove(ticket); gestorTickets.guardar(listaTickets) }, colors = ButtonDefaults.buttonColors(Color(0xFFEF4444)), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), modifier = Modifier.height(36.dp)) { Text("❌ BORRAR", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                            var verQR by remember { mutableStateOf(false) }
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(onClick = {
+                                    val idx = listaTickets.indexOfFirst { it.codigo == t.codigo }
+                                    if (idx >= 0) { listaTickets[idx] = t.copy(estado = "ACTIVO", tiempoRestanteSeg = t.minutos * 60); gestorTickets.guardar(listaTickets) }
+                                }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("ACTIVAR", fontSize = 12.sp) }
+                                Button(onClick = { verQR = true }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("QR", fontSize = 12.sp) }
+                                Button(onClick = { listaTickets.removeAll { it.codigo == t.codigo }; gestorTickets.guardar(listaTickets) }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))) { Text("BORRAR", fontSize = 12.sp) }
                             }
-                            if (mostrarQR) Dialog(onDismissRequest = { mostrarQR = false }) { Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) { Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) { Text("📱 ESCANEAR PARA ACTIVAR", fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(modifier = Modifier.height(20.dp)); val qr = remember(ticket.codigo) { generarCodigoQR("ID:${ticket.codigo}|S:${ticket.monto}|MIN:${ticket.minutos}") }; Image(qr.asImageBitmap(), null, modifier = Modifier.size(280.dp).border(BorderStroke(2.dp, Color(0xFFE0E0E0)), RoundedCornerShape(8.dp)).background(Color.White, RoundedCornerShape(8.dp))); Spacer(modifier = Modifier.height(16.dp)); Text("Código: ${ticket.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("💰 S/ ${String.format("%.2f", ticket.monto)}  •  ⏱️ ${ticket.tiempoStr}", fontSize = 14.sp, color = Color.Gray); Spacer(modifier = Modifier.height(24.dp)); Button(onClick = { mostrarQR = false }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)) { Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold) } } } }
+                            if (verQR) Dialog(onDismissRequest = { verQR = false }) {
+                                Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+                                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("CÓDIGO DE ACTIVACIÓN", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Image(remember { generarCodigoQR("COD:${t.codigo}|MONTO:${t.monto}|MIN:${t.minutos}") }.asImageBitmap(), null, modifier = Modifier.size(250.dp).border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp)))
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("Código: ${t.codigo}\nS/ %.2f - ${t.tiempoStr}".format(t.monto), fontSize = 15.sp)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(onClick = { verQR = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            if (ticketsFiltrados.isNotEmpty()) { Button(onClick = { ticketsFiltrados.forEach { listaTickets.remove(it) }; gestorTickets.guardar(listaTickets) }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))) { Text("🗑️ BORRAR TODOS LOS CREADOS", fontSize = 16.sp, fontWeight = FontWeight.Bold) }; Spacer(modifier = Modifier.height(12.dp)) }
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR", fontSize = 16.sp) }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
         }
     }
 }
 
 @Composable
 fun TicketsActivosVentana(onCerrar: () -> Unit) {
-    val tickets = remember(listaTickets.size) { listaTickets.filter { it.estado == "ACTIVO" } }
-    var reloj by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            reloj = System.currentTimeMillis()
-        }
-    }
-
+    val activos = remember(listaTickets.size) { listaTickets.filter { it.estado == "ACTIVO" } }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
-        Column(modifier = Modifier.padding(24.dp).height(520.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
-            Text("🟢 TICKETS ACTIVOS (${tickets.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
-            Text("⏱️ Tiempo corre en tiempo real", fontSize = 12.sp, color = Color.Gray)
+        Column(modifier = Modifier.padding(24.dp).height(520.dp)) {
+            Text("🟢 TICKETS ACTIVOS (${activos.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
             Spacer(modifier = Modifier.height(12.dp))
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                if (tickets.isEmpty()) Text("📭 No hay tickets activos", color = Color.Gray, modifier = Modifier.padding(16.dp))
-                else tickets.forEach { ticket ->
-                    val ticketActual = listaTickets.find { it.codigo == ticket.codigo } ?: ticket
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.Top) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("🆔 CÓDIGO: ${ticketActual.codigo}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                    Text("💰 S/ ${String.format("%.2f", ticketActual.monto)}  •  📅 ${ticketActual.fecha}", fontSize = 13.sp, color = Color.Gray)
-                                    Text("👤 ${ticketActual.nombreUsuario}  •  🌐 ${ticketActual.ipUsuario}", fontSize = 12.sp, color = Color.Gray)
-                                }
-                                var mostrarQR by remember { mutableStateOf(false) }
-                                Button(onClick = { mostrarQR = true }, colors = ButtonDefaults.buttonColors(Color(0xFF2563EB)), modifier = Modifier.height(36.dp)) { Text("📱 QR", fontSize = 13.sp) }
-                                if (mostrarQR) Dialog(onDismissRequest = { mostrarQR = false }) { Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(20.dp)) { Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) { Text("📱 CÓDIGO QR", fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(modifier = Modifier.height(20.dp)); val qr = remember(ticketActual.codigo) { generarCodigoQR("ID:${ticketActual.codigo}|S:${ticketActual.monto}|MIN:${ticketActual.minutos}") }; Image(qr.asImageBitmap(), null, modifier = Modifier.size(250.dp).border(BorderStroke(2.dp, Color(0xFFE0E0E0)), RoundedCornerShape(8.dp)).background(Color.White, RoundedCornerShape(8.dp))); Spacer(modifier = Modifier.height(16.dp)); Text("Código: ${ticketActual.codigo}", fontSize = 18.sp, fontWeight = FontWeight.Bold); Spacer(modifier = Modifier.height(16.dp)); Button(onClick = { mostrarQR = false }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)) { Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold) } } } }
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "⏱️ TIEMPO RESTANTE: ${formatearTiempo(ticketActual.tiempoRestanteSeg)}",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (ticketActual.tiempoRestanteSeg < 300) Color(0xFFEF4444) else Color(0xFF22C55E)
-                            )
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (activos.isEmpty()) Text("📭 Sin tickets activos", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else activos.forEach { t ->
+                    val actual = listaTickets.find { it.codigo == t.codigo } ?: t
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("🆔 ${actual.codigo} | S/ %.2f".format(actual.monto), fontWeight = FontWeight.Bold)
+                            Text("⏱️ Tiempo restante: ${formatearTiempo(actual.tiempoRestanteSeg)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (actual.tiempoRestanteSeg < 300) Color.Red else Color(0xFF22C55E))
                             Spacer(modifier = Modifier.height(8.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                                Column(horizontalAlignment = Alignment.CenterVertically) {
-                                    Text("📤 SUBIDA", fontSize = 12.sp, color = Color.Gray)
-                                    Text(ticketActual.velocidadSubida, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB))
-                                }
-                                Column(horizontalAlignment = Alignment.CenterVertically) {
-                                    Text("📥 BAJADA", fontSize = 12.sp, color = Color.Gray)
-                                    Text(ticketActual.velocidadBajada, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
-                                }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                Text("📤 ${actual.velocidadSubida}")
+                                Text("📥 ${actual.velocidadBajada}")
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Button(onClick = { val i = listaTickets.indexOfFirst { it.codigo == ticketActual.codigo }; if (i >= 0) { listaTickets[i] = ticketActual.copy(estado = "PAUSADO", velocidadSubida = "— Mbps", velocidadBajada = "— Mbps"); gestorTickets.guardar(listaTickets) } }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFFF59E0B))) { Text("⏸️ PAUSAR TICKET", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = {
+                                val idx = listaTickets.indexOfFirst { it.codigo == actual.codigo }
+                                if (idx >= 0) { listaTickets[idx] = actual.copy(estado = "PAUSADO"); gestorTickets.guardar(listaTickets) }
+                            }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFFF59E0B))) { Text("⏸️ PAUSAR") }
                         }
                     }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR", fontSize = 16.sp) }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
         }
     }
 }
 
 @Composable
 fun TicketsPausadosVentana(onCerrar: () -> Unit) {
-    val tickets = remember(listaTickets.size) { listaTickets.filter { it.estado == "PAUSADO" } }
+    val pausados = remember(listaTickets.size) { listaTickets.filter { it.estado == "PAUSADO" } }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
-        Column(modifier = Modifier.padding(24.dp).height(450.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
-            Text("🟡 TICKETS PAUSADOS (${tickets.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+        Column(modifier = Modifier.padding(24.dp).height(450.dp)) {
+            Text("🟡 TICKETS PAUSADOS (${pausados.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
             Spacer(modifier = Modifier.height(12.dp))
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                if (tickets.isEmpty()) Text("📭 No hay tickets pausados", color = Color.Gray, modifier = Modifier.padding(16.dp))
-                else tickets.forEach { ticket ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(Color(0xFFFFF8E1))) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.Top) {
-                            Text("🆔 ${ticket.codigo}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text("💰 S/ ${String.format("%.2f", ticket.monto)}", fontSize = 13.sp)
-                            Text("⏱️ ${formatearTiempo(ticket.tiempoRestanteSeg)}", fontSize = 13.sp)
-                            Text("📅 ${ticket.fecha}", fontSize = 12.sp, color = Color.Gray)
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (pausados.isEmpty()) Text("📭 Sin tickets pausados", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else pausados.forEach { t ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(Color(0xFFFFF8E1))) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("🆔 ${t.codigo} | S/ %.2f".format(t.monto), fontWeight = FontWeight.Bold)
+                            Text("⏱️ ${formatearTiempo(t.tiempoRestanteSeg)}")
                             Spacer(modifier = Modifier.height(8.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                                Text("📤 ${ticket.velocidadSubida}", fontSize = 13.sp, color = Color.Gray)
-                                Text("📥 ${ticket.velocidadBajada}", fontSize = 13.sp, color = Color.Gray)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(onClick = { val i = listaTickets.indexOf(ticket); if (i >= 0) { listaTickets[i] = ticket.copy(estado = "ACTIVO"); gestorTickets.guardar(listaTickets) } }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("▶️ REANUDAR", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                            Button(onClick = {
+                                val idx = listaTickets.indexOfFirst { it.codigo == t.codigo }
+                                if (idx >= 0) { listaTickets[idx] = t.copy(estado = "ACTIVO"); gestorTickets.guardar(listaTickets) }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("▶️ REANUDAR") }
                         }
                     }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR", fontSize = 16.sp) }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
         }
     }
 }
 
 @Composable
 fun TicketsVencidosVentana(onCerrar: () -> Unit) {
-    val tickets = remember(listaTickets.size) { listaTickets.filter { it.estado == "VENCIDO" } }
+    val vencidos = remember(listaTickets.size) { listaTickets.filter { it.estado == "VENCIDO" } }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
-        Column(modifier = Modifier.padding(24.dp).height(450.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
-            Text("🔴 TICKETS VENCIDOS (${tickets.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+        Column(modifier = Modifier.padding(24.dp).height(450.dp)) {
+            Text("🔴 TICKETS VENCIDOS (${vencidos.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
             Spacer(modifier = Modifier.height(12.dp))
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                if (tickets.isEmpty()) Text("📭 No hay tickets vencidos", color = Color.Gray, modifier = Modifier.padding(16.dp))
-                else tickets.forEach { ticket ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(Color(0xFFFFEBEE))) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.Top) {
-                            Text("🆔 ${ticket.codigo}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text("💰 S/ ${String.format("%.2f", ticket.monto)}", fontSize = 13.sp)
-                            Text("⏱️ ${formatearTiempo(ticket.tiempoRestanteSeg)}", fontSize = 13.sp)
-                            Text("📅 ${ticket.fecha}", fontSize = 12.sp, color = Color.Gray)
-                            Text("🔴 VENCIDO", fontSize = 13.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (vencidos.isEmpty()) Text("📭 Sin tickets vencidos", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else vencidos.forEach { t ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(Color(0xFFFFEBEE))) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("🆔 ${t.codigo} | S/ %.2f".format(t.monto), fontWeight = FontWeight.Bold)
+                            Text("⏱️ ${formatearTiempo(t.tiempoRestanteSeg)}")
+                            Text("🔴 Vencido", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR", fontSize = 16.sp) }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
         }
     }
 }
 
 @Composable
 fun HistorialVentana(onCerrar: () -> Unit) {
-    var textoBuscar by remember { mutableStateOf("") }
-    var confirmarBorrarTodo by remember { mutableStateOf(false) }
-    val ticketsFiltrados = remember(textoBuscar, listaTickets.size) {
-        listaTickets.filter {
-            it.codigo.contains(textoBuscar, ignoreCase = true) ||
-            it.nombreUsuario.contains(textoBuscar, ignoreCase = true)
-        }
+    var buscar by remember { mutableStateOf("") }
+    val filtro = remember(buscar, listaTickets.size) {
+        listaTickets.filter { buscar.isBlank() || it.codigo.contains(buscar, true) || it.nombreUsuario.contains(buscar, true) }
     }
-
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(20.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp).height(550.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Top
-        ) {
-            Text(
-                "📋 HISTORIAL COMPLETO (${ticketsFiltrados.size})",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF6366F1)
-            )
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(24.dp).height(550.dp)) {
+            Text("📋 HISTORIAL COMPLETO (${filtro.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = textoBuscar,
-                onValueChange = { textoBuscar = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Buscar por código o usuario...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar") },
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp)
-            )
+            OutlinedTextField(buscar, { buscar = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar código o usuario") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
             Spacer(modifier = Modifier.height(12.dp))
-
-            Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).weight(1f)
-            ) {
-                if (ticketsFiltrados.isEmpty()) {
-                    Text(
-                        "📭 No hay registros en el historial",
-                        color = Color.Gray,
-                        modifier = Modifier.padding(16.dp),
-                        fontSize = 15.sp
-                    )
-                } else {
-                    ticketsFiltrados.forEach { ticket ->
-                        val colorEstado = when(ticket.estado) {
-                            "CREADO" -> Color(0xFF6366F1)
-                            "ACTIVO" -> Color(0xFF22C55E)
-                            "PAUSADO" -> Color(0xFFF59E0B)
-                            "VENCIDO" -> Color(0xFFEF4444)
-                            else -> Color.Gray
-                        }
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("🆔 ${ticket.codigo}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                    Text("💰 S/ ${String.format("%.2f", ticket.monto)}  •  ⏱️ ${ticket.tiempoStr}", fontSize = 13.sp)
-                                    Text("📅 ${ticket.fecha}  •  👤 ${ticket.nombreUsuario}", fontSize = 12.sp, color = Color.Gray)
-                                }
-                                Text(
-                                    ticket.estado,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = colorEstado
-                                )
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f)) {
+                if (filtro.isEmpty()) Text("📭 Sin registros", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else filtro.forEach { t ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("🆔 ${t.codigo}", fontWeight = FontWeight.Bold)
+                                Text("💰 S/ %.2f | ⏱️ ${t.tiempoStr}".format(t.monto))
+                                Text("📅 ${t.fecha} | Estado: ${t.estado}", fontSize = 12.sp, color = Color.Gray)
                             }
                         }
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(12.dp))
-
-            if (ticketsFiltrados.isNotEmpty()) {
-                Button(
-                    onClick = { confirmarBorrarTodo = true },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))
-                ) {
-                    Text("🗑️ LIMPIAR HISTORIAL", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            Button(
-                onClick = onCerrar,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("CERRAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-
-    if (confirmarBorrarTodo) {
-        Dialog(onDismissRequest = { confirmarBorrarTodo = false }) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "⚠️ CONFIRMACIÓN",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "¿Seguro quieres borrar todo el historial? Esta acción no se puede deshacer.",
-                        fontSize = 15.sp,
-                        color = Color.Gray
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Button(
-                            onClick = { confirmarBorrarTodo = false },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
-                        ) {
-                            Text("CANCELAR", fontWeight = FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = {
-                                listaTickets.clear()
-                                gestorTickets.guardar(listaTickets)
-                                confirmarBorrarTodo = false
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))
-                        ) {
-                            Text("BORRAR", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
         }
     }
 }

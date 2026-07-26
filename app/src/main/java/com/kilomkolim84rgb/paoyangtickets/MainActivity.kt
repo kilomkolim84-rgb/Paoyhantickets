@@ -143,9 +143,7 @@ fun escucharHistorialFirebase() {
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            // PRIMERO: recorre cada código (ej: 469193)
             for (codigoNodo in snapshot.children) {
-                // SEGUNDO: entra al nodo interno con ID automático
                 for (ticketNodo in codigoNodo.children) {
                     val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
                     val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
@@ -156,6 +154,25 @@ fun escucharHistorialFirebase() {
 
                     if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                     if (monto <= 0.0) continue
+
+                    // ✅ AQUÍ: DETECTA SI EL PORTAL LO USÓ → CAMBIA ESTADO Y TE AVISA
+                    if (leidoPorPortal) {
+                        val idx = listaTickets.indexOfFirst { it.codigo == codigo }
+                        if (idx >= 0 && listaTickets[idx].estado != "ACTIVO - EN USO") {
+                            // Cambia el estado en la lista
+                            listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO - EN USO")
+                            gestorTickets.guardar(listaTickets)
+                            
+                            // 📢 MUESTRA EL AVISO EN PANTALLA INMEDIATAMENTE
+                            runOnUiThread {
+                                android.widget.Toast.makeText(
+                                    this@MainActivity,
+                                    "📢 AVISO: CÓDIGO $codigo YA FUE ACTIVADO / EN USO",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
 
                     // ✅ TU REGLA: SOLO MARCA TICKET SI MONEDERO YA LO HIZO
                     if (!leidoPorTicket && leidoPorMonedero) {
@@ -180,9 +197,9 @@ fun escucharHistorialFirebase() {
                         gestorTickets.guardar(listaTickets)
                     }
 
-                    // ✅ AHORA BORRA TODO EL CÓDIGO CUANDO LOS 3 ESTÁN LISTOS
+                    // ✅ BORRA SOLO CUANDO LOS 3 ESTÁN LISTOS
                     if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                        codigoNodo.ref.removeValue() // BORRA EL CÓDIGO COMPLETO
+                        codigoNodo.ref.removeValue()
                     }
                 }
             }

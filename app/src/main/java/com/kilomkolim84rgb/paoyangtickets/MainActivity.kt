@@ -283,22 +283,37 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
+    // ==================== BLOQUE CORREGIDO ====================
     LaunchedEffect(Unit) {
         trabajoReloj = launch {
-            while (isActive) {
+            while (true) {
                 delay(1000)
-                var cambio = false
-                listaTickets.forEachIndexed { i, t ->
-                    if (t.estado == "ACTIVO") {
-                        val nuevo = t.tiempoRestanteSeg - 1
-                        listaTickets[i] = if (nuevo <= 0) t.copy(estado = "VENCIDO", tiempoRestanteSeg = 0) else t.copy(tiempoRestanteSeg = nuevo)
-                        cambio = true
+                var huboCambios = false
+
+                listaTickets.forEachIndexed { indice, ticket ->
+                    if (ticket.estado == "ACTIVO") {
+                        val nuevoTiempo = ticket.tiempoRestanteSeg - 1
+                        listaTickets[indice] = if (nuevoTiempo <= 0) {
+                            ticket.copy(estado = "VENCIDO", tiempoRestanteSeg = 0)
+                        } else {
+                            ticket.copy(tiempoRestanteSeg = nuevoTiempo)
+                        }
+                        huboCambios = true
                     }
                 }
-                if (cambio) gestorTickets.guardar(listaTickets)
+
+                if (huboCambios) {
+                    gestorTickets.guardar(listaTickets)
+                }
             }
         }
+
+        invokeOnCompletion {
+            trabajoReloj?.cancel()
+            trabajoReloj = null
+        }
     }
+    // ===========================================================
 
     if (abrirConfig1) Dialog(onDismissRequest = { abrirConfig1 = false }) { VentanaConfigMikrotik(1, "ROUTER #1") { abrirConfig1 = false } }
     if (abrirConfig2) Dialog(onDismissRequest = { abrirConfig2 = false }) { VentanaConfigMikrotik(2, "ROUTER #2") { abrirConfig2 = false } }

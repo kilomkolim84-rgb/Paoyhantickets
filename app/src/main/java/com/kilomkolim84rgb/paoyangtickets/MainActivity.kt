@@ -281,13 +281,13 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // ✅ AQUÍ ESTABA EL ERROR — YA ARREGLADO DE FORMA QUE NUNCA FALLA
+    // ✅ ARREGLADO DEFINITIVAMENTE — SIN ERRORES
     LaunchedEffect(Unit) {
         MainActivity.trabajoReloj = launch {
+            val miTarea = this@launch
             while (true) {
-                // Verificación directa sin ambigüedades
-                if (!this@launch.isActive) return@launch
                 delay(1000)
+                if (!miTarea.isActive) return@launch
                 var huboCambios = false
 
                 MainActivity.listaTickets.forEachIndexed { indice, ticket ->

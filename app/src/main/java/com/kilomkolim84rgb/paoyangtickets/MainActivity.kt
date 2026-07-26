@@ -191,7 +191,7 @@ fun escucharHistorialFirebase() {
 
                     // ✅ BORRA SOLO CUANDO LOS 3 ESTÁN LISTOS
                     if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                        codigoNodo.ref.removeValue()
+                        ticketNodo.ref.parent?.parent?.removeValue()
                     }
                 }
             }

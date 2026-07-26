@@ -165,7 +165,7 @@ fun escucharHistorialFirebase() {
                             
                             // 📢 MUESTRA EL AVISO EN PANTALLA INMEDIATAMENTE
                                 android.widget.Toast.makeText(
-                                    this@MainActivity,
+                                    applicationContext,
                                     "📢 AVISO: CÓDIGO $codigo YA FUE ACTIVADO / EN USO",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()

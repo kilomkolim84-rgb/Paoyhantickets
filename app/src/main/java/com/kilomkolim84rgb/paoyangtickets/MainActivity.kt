@@ -287,10 +287,11 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // CONTADOR DE TIEMPO OPTIMIZADO
+    // ✅ CONTADOR DE TIEMPO ARREGLADO
     LaunchedEffect(Unit) {
         MainActivity.trabajoReloj = launch {
-            while (isActive) {
+            while (true) {
+                if (!isActive) break
                 delay(1000)
                 var huboCambios = false
 

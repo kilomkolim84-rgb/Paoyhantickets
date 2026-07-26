@@ -135,7 +135,7 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
-// ============= ESCUCHA FIREBASE =============
+// ============= ESCUCHA FIREBASE CORREGIDA =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
@@ -143,8 +143,10 @@ fun escucharHistorialFirebase() {
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            for (hijo in snapshot.children) {
-                for (ticketNodo in hijo.children) {
+            // PRIMERO: recorre cada código (ej: 469193)
+            for (codigoNodo in snapshot.children) {
+                // SEGUNDO: entra al nodo interno con ID automático
+                for (ticketNodo in codigoNodo.children) {
                     val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
                     val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
                     val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
@@ -155,6 +157,7 @@ fun escucharHistorialFirebase() {
                     if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                     if (monto <= 0.0) continue
 
+                    // ✅ TU REGLA: SOLO MARCA TICKET SI MONEDERO YA LO HIZO
                     if (!leidoPorTicket && leidoPorMonedero) {
                         ticketNodo.ref.child("leido_por_ticket").setValue(true)
                     }
@@ -177,8 +180,9 @@ fun escucharHistorialFirebase() {
                         gestorTickets.guardar(listaTickets)
                     }
 
+                    // ✅ AHORA BORRA TODO EL CÓDIGO CUANDO LOS 3 ESTÁN LISTOS
                     if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                        ticketNodo.ref.removeValue()
+                        codigoNodo.ref.removeValue() // BORRA EL CÓDIGO COMPLETO
                     }
                 }
             }

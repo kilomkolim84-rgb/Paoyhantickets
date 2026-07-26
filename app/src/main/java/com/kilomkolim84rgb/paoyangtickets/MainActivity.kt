@@ -164,13 +164,11 @@ fun escucharHistorialFirebase() {
                             gestorTickets.guardar(listaTickets)
                             
                             // 📢 MUESTRA EL AVISO EN PANTALLA INMEDIATAMENTE
-                            runOnUiThread {
                                 android.widget.Toast.makeText(
                                     this@MainActivity,
                                     "📢 AVISO: CÓDIGO $codigo YA FUE ACTIVADO / EN USO",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
-                            }
                         }
                     }
 

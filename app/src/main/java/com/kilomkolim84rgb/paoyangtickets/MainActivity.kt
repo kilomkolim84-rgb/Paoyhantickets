@@ -155,7 +155,7 @@ fun escucharHistorialFirebase() {
                     if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                     if (monto <= 0.0) continue
 
-                    if (!leidoPorTicket) {
+                    if (!leidoPorTicket && leidoPorMonedero) {
                         ticketNodo.ref.child("leido_por_ticket").setValue(true)
                     }
 

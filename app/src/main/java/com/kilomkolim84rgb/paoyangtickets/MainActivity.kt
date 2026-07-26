@@ -44,9 +44,20 @@ class MainActivity : ComponentActivity() {
             PantallaPrincipal()
         }
     }
-}
 
-val db = FirebaseDatabase.getInstance().reference
+    override fun onDestroy() {
+        super.onDestroy()
+        trabajoReloj?.cancel()
+    }
+
+    companion object {
+        lateinit var configMikrotik: MikrotikConfig
+        lateinit var gestorTickets: TicketManager
+        var trabajoReloj: Job? = null
+        val db = FirebaseDatabase.getInstance().reference
+        val listaTickets = mutableStateListOf<Ticket>()
+    }
+}
 
 // ============= GESTOR DE CONFIGURACIÓN MIKROTIK =============
 class MikrotikConfig(context: Context) {
@@ -80,8 +91,6 @@ class MikrotikConfig(context: Context) {
             .apply()
     }
 }
-
-lateinit var configMikrotik: MikrotikConfig
 
 // ============= GESTOR DE TICKETS =============
 class TicketManager(context: Context) {
@@ -130,15 +139,12 @@ class TicketManager(context: Context) {
     }
 }
 
-lateinit var gestorTickets: TicketManager
-val listaTickets = mutableStateListOf<Ticket>()
-
 // ============= ESCUCHA FIREBASE =============
 fun escucharHistorialFirebase() {
-    listaTickets.addAll(gestorTickets.cargar())
-    println("✅ Cargados ${listaTickets.size} tickets guardados")
+    MainActivity.listaTickets.addAll(MainActivity.gestorTickets.cargar())
+    println("✅ Cargados ${MainActivity.listaTickets.size} tickets guardados")
 
-    val ref = db.child("historial")
+    val ref = MainActivity.db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
             for (hijo in snapshot.children) {
@@ -157,13 +163,13 @@ fun escucharHistorialFirebase() {
                         ticketNodo.ref.child("leido_por_ticket").setValue(true)
                     }
 
-                    if (listaTickets.none { it.codigo == codigo }) {
+                    if (MainActivity.listaTickets.none { it.codigo == codigo }) {
                         val minutos = (monto * 100).toInt()
                         val horas = minutos / 60
                         val mins = minutos % 60
                         val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
 
-                        listaTickets.add(0, Ticket(
+                        MainActivity.listaTickets.add(0, Ticket(
                             codigo = codigo,
                             monto = monto.toFloat(),
                             minutos = minutos,
@@ -172,7 +178,7 @@ fun escucharHistorialFirebase() {
                             estado = "CREADO",
                             tiempoRestanteSeg = minutos * 60
                         ))
-                        gestorTickets.guardar(listaTickets)
+                        MainActivity.gestorTickets.guardar(MainActivity.listaTickets)
                     }
 
                     if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
@@ -197,7 +203,7 @@ fun formatearTiempo(segundos: Int): String {
 @Composable
 fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> Unit) {
     val contexto = androidx.compose.ui.platform.LocalContext.current
-    val config = remember { configMikrotik.cargar(routerId) }
+    val config = remember { MainActivity.configMikrotik.cargar(routerId) }
 
     var ip by remember { mutableStateOf(config.ip) }
     var puerto by remember { mutableStateOf(config.puerto) }
@@ -229,7 +235,7 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
                 Button(onClick = { mensajeEstado = if (ip.isNotBlank()) "✅ Conexión válida" else "❌ Ingrese la IP" }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
                 Button(onClick = {
                     if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
-                    configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, puerto, usuario, clave, dns))
+                    MainActivity.configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, puerto, usuario, clave, dns))
                     mensajeEstado = "✅ Guardado"
                     Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
                 }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
@@ -243,7 +249,7 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
 // ============= TARJETA ROUTER =============
 @Composable
 fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: Boolean, alTocar: () -> Unit, alConfigurar: () -> Unit) {
-    val config = remember { configMikrotik.cargar(routerId) }
+    val config = remember { MainActivity.configMikrotik.cargar(routerId) }
     Card(onClick = alTocar, modifier = Modifier.width(160.dp).height(145.dp), shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(if (seleccionado) Color(0xFFE3F2FD) else Color.White),
         border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
@@ -274,25 +280,24 @@ fun PantallaPrincipal() {
     var abrirPausados by remember { mutableStateOf(false) }
     var abrirVencidos by remember { mutableStateOf(false) }
     var abrirHistorial by remember { mutableStateOf(false) }
-    var trabajoReloj: Job? = null
 
     LaunchedEffect(Unit) { escucharHistorialFirebase() }
-    val cCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
-    val cActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
-    val cPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
-    val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
+    val cCreados by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "CREADO" } } }
+    val cActivos by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "ACTIVO" } } }
+    val cPausados by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "PAUSADO" } } }
+    val cVencidos by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // BLOQUE DEL RELOJ - ARREGLADO DEFINITIVAMENTE
+    // CONTADOR DE TIEMPO OPTIMIZADO
     LaunchedEffect(Unit) {
-        trabajoReloj = launch {
-            while (true) {
+        MainActivity.trabajoReloj = launch {
+            while (isActive) {
                 delay(1000)
                 var huboCambios = false
 
-                listaTickets.forEachIndexed { indice, ticket ->
+                MainActivity.listaTickets.forEachIndexed { indice, ticket ->
                     if (ticket.estado == "ACTIVO") {
                         val nuevoTiempo = ticket.tiempoRestanteSeg - 1
-                        listaTickets[indice] = if (nuevoTiempo <= 0) {
+                        MainActivity.listaTickets[indice] = if (nuevoTiempo <= 0) {
                             ticket.copy(estado = "VENCIDO", tiempoRestanteSeg = 0)
                         } else {
                             ticket.copy(tiempoRestanteSeg = nuevoTiempo)
@@ -302,7 +307,7 @@ fun PantallaPrincipal() {
                 }
 
                 if (huboCambios) {
-                    gestorTickets.guardar(listaTickets)
+                    MainActivity.gestorTickets.guardar(MainActivity.listaTickets)
                 }
             }
         }
@@ -325,7 +330,7 @@ fun PantallaPrincipal() {
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-        val configActual = remember(routerSeleccionado) { configMikrotik.cargar(routerSeleccionado) }
+        val configActual = remember(routerSeleccionado) { MainActivity.configMikrotik.cargar(routerSeleccionado) }
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
             Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("📡 CONFIGURACIÓN — Router #$routerSeleccionado", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
@@ -353,7 +358,7 @@ fun PantallaPrincipal() {
         Spacer(modifier = Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             BotonPestana("🔴 VENCIDOS ($cVencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
-            BotonPestana("📋 HISTORIAL (${listaTickets.size})", Color(0xFF6366F1), Modifier.weight(1f)) { abrirHistorial = true }
+            BotonPestana("📋 HISTORIAL (${MainActivity.listaTickets.size})", Color(0xFF6366F1), Modifier.weight(1f)) { abrirHistorial = true }
         }
     }
 }
@@ -390,12 +395,12 @@ data class Ticket(
     val nombreUsuario: String = "Sin asignar"
 )
 
-// ============= VENTANAS =============
+// ============= VENTANAS DE TICKETS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }
-    val filtro = remember(buscar, listaTickets.size) {
-        listaTickets.filter { it.estado == "CREADO" && (buscar.isBlank() || it.codigo.contains(buscar, true)) }
+    val filtro = remember(buscar, MainActivity.listaTickets.size) {
+        MainActivity.listaTickets.filter { it.estado == "CREADO" && (buscar.isBlank() || it.codigo.contains(buscar, true)) }
     }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(24.dp).height(550.dp)) {
@@ -417,11 +422,17 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                             var verQR by remember { mutableStateOf(false) }
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(onClick = {
-                                    val idx = listaTickets.indexOfFirst { it.codigo == t.codigo }
-                                    if (idx >= 0) { listaTickets[idx] = t.copy(estado = "ACTIVO", tiempoRestanteSeg = t.minutos * 60); gestorTickets.guardar(listaTickets) }
+                                    val idx = MainActivity.listaTickets.indexOfFirst { it.codigo == t.codigo }
+                                    if (idx >= 0) {
+                                        MainActivity.listaTickets[idx] = t.copy(estado = "ACTIVO", tiempoRestanteSeg = t.minutos * 60)
+                                        MainActivity.gestorTickets.guardar(MainActivity.listaTickets)
+                                    }
                                 }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("ACTIVAR", fontSize = 12.sp) }
                                 Button(onClick = { verQR = true }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("QR", fontSize = 12.sp) }
-                                Button(onClick = { listaTickets.removeAll { it.codigo == t.codigo }; gestorTickets.guardar(listaTickets) }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))) { Text("BORRAR", fontSize = 12.sp) }
+                                Button(onClick = {
+                                    MainActivity.listaTickets.removeAll { it.codigo == t.codigo }
+                                    MainActivity.gestorTickets.guardar(MainActivity.listaTickets)
+                                }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))) { Text("BORRAR", fontSize = 12.sp) }
                             }
                             if (verQR) Dialog(onDismissRequest = { verQR = false }) {
                                 Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
@@ -448,7 +459,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
 
 @Composable
 fun TicketsActivosVentana(onCerrar: () -> Unit) {
-    val activos = remember(listaTickets.size) { listaTickets.filter { it.estado == "ACTIVO" } }
+    val activos = remember(MainActivity.listaTickets.size) { MainActivity.listaTickets.filter { it.estado == "ACTIVO" } }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(24.dp).height(520.dp)) {
             Text("🟢 TICKETS ACTIVOS (${activos.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
@@ -456,7 +467,7 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 if (activos.isEmpty()) Text("📭 Sin tickets activos", color = Color.Gray, modifier = Modifier.padding(16.dp))
                 else activos.forEach { t ->
-                    val actual = listaTickets.find { it.codigo == t.codigo } ?: t
+                    val actual = MainActivity.listaTickets.find { it.codigo == t.codigo } ?: t
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Text("🆔 ${actual.codigo} | S/ %.2f".format(actual.monto), fontWeight = FontWeight.Bold)
@@ -468,8 +479,11 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(onClick = {
-                                val idx = listaTickets.indexOfFirst { it.codigo == actual.codigo }
-                                if (idx >= 0) { listaTickets[idx] = actual.copy(estado = "PAUSADO"); gestorTickets.guardar(listaTickets) }
+                                val idx = MainActivity.listaTickets.indexOfFirst { it.codigo == actual.codigo }
+                                if (idx >= 0) {
+                                    MainActivity.listaTickets[idx] = actual.copy(estado = "PAUSADO")
+                                    MainActivity.gestorTickets.guardar(MainActivity.listaTickets)
+                                }
                             }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFFF59E0B))) { Text("⏸️ PAUSAR") }
                         }
                     }
@@ -483,7 +497,7 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
 
 @Composable
 fun TicketsPausadosVentana(onCerrar: () -> Unit) {
-    val pausados = remember(listaTickets.size) { listaTickets.filter { it.estado == "PAUSADO" } }
+    val pausados = remember(MainActivity.listaTickets.size) { MainActivity.listaTickets.filter { it.estado == "PAUSADO" } }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(24.dp).height(450.dp)) {
             Text("🟡 TICKETS PAUSADOS (${pausados.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
@@ -497,8 +511,11 @@ fun TicketsPausadosVentana(onCerrar: () -> Unit) {
                             Text("⏱️ ${formatearTiempo(t.tiempoRestanteSeg)}")
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(onClick = {
-                                val idx = listaTickets.indexOfFirst { it.codigo == t.codigo }
-                                if (idx >= 0) { listaTickets[idx] = t.copy(estado = "ACTIVO"); gestorTickets.guardar(listaTickets) }
+                                val idx = MainActivity.listaTickets.indexOfFirst { it.codigo == t.codigo }
+                                if (idx >= 0) {
+                                    MainActivity.listaTickets[idx] = t.copy(estado = "ACTIVO")
+                                    MainActivity.gestorTickets.guardar(MainActivity.listaTickets)
+                                }
                             }, modifier = Modifier.fillMaxWidth()) { Text("▶️ REANUDAR") }
                         }
                     }
@@ -512,7 +529,7 @@ fun TicketsPausadosVentana(onCerrar: () -> Unit) {
 
 @Composable
 fun TicketsVencidosVentana(onCerrar: () -> Unit) {
-    val vencidos = remember(listaTickets.size) { listaTickets.filter { it.estado == "VENCIDO" } }
+    val vencidos = remember(MainActivity.listaTickets.size) { MainActivity.listaTickets.filter { it.estado == "VENCIDO" } }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(24.dp).height(450.dp)) {
             Text("🔴 TICKETS VENCIDOS (${vencidos.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
@@ -538,8 +555,8 @@ fun TicketsVencidosVentana(onCerrar: () -> Unit) {
 @Composable
 fun HistorialVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }
-    val filtro = remember(buscar, listaTickets.size) {
-        listaTickets.filter { buscar.isBlank() || it.codigo.contains(buscar, true) || it.nombreUsuario.contains(buscar, true) }
+    val filtro = remember(buscar, MainActivity.listaTickets.size) {
+        MainActivity.listaTickets.filter { buscar.isBlank() || it.codigo.contains(buscar, true) || it.nombreUsuario.contains(buscar, true) }
     }
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(24.dp).height(550.dp)) {

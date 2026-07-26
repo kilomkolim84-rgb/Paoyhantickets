@@ -281,10 +281,12 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { MainActivity.listaTickets.count { it.estado == "VENCIDO" } } }
 
+    // ✅ AQUÍ ESTABA EL ERROR — YA ARREGLADO DE FORMA QUE NUNCA FALLA
     LaunchedEffect(Unit) {
         MainActivity.trabajoReloj = launch {
             while (true) {
-                if (!isActive) break
+                // Verificación directa sin ambigüedades
+                if (!this@launch.isActive) return@launch
                 delay(1000)
                 var huboCambios = false
 

@@ -8,6 +8,7 @@ plugins {
 android {
     namespace 'com.kilomkolim84rgb.paoyangtickets'
     compileSdk 34
+
     defaultConfig {
         applicationId "com.kilomkolim84rgb.paoyangtickets"
         minSdk 24
@@ -15,28 +16,34 @@ android {
         versionCode 1
         versionName "1.0"
     }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = '17'
     }
+
     buildFeatures {
         compose true
     }
+
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.14'
     }
 }
 
 dependencies {
+    // Base y Compose
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
@@ -46,27 +53,17 @@ dependencies {
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.material3:material3'
 
-    // ✅ FIREBASE — TODO COMPLETO
+    // Firebase
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-database-ktx'
     implementation 'com.google.firebase:firebase-analytics-ktx'
 
-    // ✅ CÓDIGO QR
+    // Código QR
     implementation 'com.google.zxing:core:3.5.1'
 
-    // ✅ ROOM
+    // Room
     def room_version = "2.6.1"
     implementation "androidx.room:room-runtime:$room_version"
     implementation "androidx.room:room-ktx:$room_version"
     ksp "androidx.room:room-compiler:$room_version"
-    
-    // Jetpack Compose
-    implementation 'androidx.compose.ui:ui:1.6.0'
-    implementation 'androidx.compose.material3:material3:1.2.0'
-    implementation 'androidx.activity:activity-compose:1.8.2'
 }
-
-}
-
-// ✅ FIREBASE — NO TOCAR
-apply plugin: 'com.google.gms.google-services'

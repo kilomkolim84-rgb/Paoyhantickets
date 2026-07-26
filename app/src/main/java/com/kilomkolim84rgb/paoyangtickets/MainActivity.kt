@@ -135,7 +135,7 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
-// ============= ESCUCHA FIREBASE CORREGIDA =============
+// ============= ESCUCHA FIREBASE ARREGLADA ✅ =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
@@ -143,56 +143,54 @@ fun escucharHistorialFirebase() {
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            for (codigoNodo in snapshot.children) {
-                for (ticketNodo in codigoNodo.children) {
-                    val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
-                    val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
-                    val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
-                    val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java) ?: false
-                    val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
-                    val leidoPorPortal = ticketNodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
+            // ✅ QUITADO EL BUCLE SOBRANTE: lee directo al ticket
+            for (ticketNodo in snapshot.children) {
+                val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
+                val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
+                val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
+                val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java) ?: false
+                val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
+                val leidoPorPortal = ticketNodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
 
-                    if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
-                    if (monto <= 0.0) continue
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
+                if (monto <= 0.0) continue
 
-                    // ✅ AQUÍ: DETECTA SI EL PORTAL LO USÓ → CAMBIA ESTADO Y TE AVISA
-                    if (leidoPorPortal) {
-                        val idx = listaTickets.indexOfFirst { it.codigo == codigo }
-                        if (idx >= 0 && listaTickets[idx].estado != "ACTIVO - EN USO") {
-                            // Cambia el estado en la lista
-                            listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO - EN USO")
-                            gestorTickets.guardar(listaTickets)
-                          
-                        }
-                    }
-
-                    // ✅ TU REGLA: SOLO MARCA TICKET SI MONEDERO YA LO HIZO
-                    if (!leidoPorTicket && leidoPorMonedero) {
-                        ticketNodo.ref.child("leido_por_ticket").setValue(true)
-                    }
-
-                    if (listaTickets.none { it.codigo == codigo }) {
-                        val minutos = (monto * 100).toInt()
-                        val horas = minutos / 60
-                        val mins = minutos % 60
-                        val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
-
-                        listaTickets.add(0, Ticket(
-                            codigo = codigo,
-                            monto = monto.toFloat(),
-                            minutos = minutos,
-                            tiempoStr = tiempoStr,
-                            fecha = fecha,
-                            estado = "CREADO",
-                            tiempoRestanteSeg = minutos * 60
-                        ))
+                // ✅ DETECTA SI EL PORTAL LO USÓ → CAMBIA ESTADO
+                if (leidoPorPortal) {
+                    val idx = listaTickets.indexOfFirst { it.codigo == codigo }
+                    if (idx >= 0 && listaTickets[idx].estado != "ACTIVO - EN USO") {
+                        listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO - EN USO")
                         gestorTickets.guardar(listaTickets)
                     }
+                }
 
-                    // ✅ BORRA SOLO CUANDO LOS 3 ESTÁN LISTOS
-                    if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                        ticketNodo.ref.parent?.parent?.removeValue()
-                    }
+                // ✅ SOLO MARCA LEÍDO SI EL MONEDERO YA LO HIZO
+                if (!leidoPorTicket && leidoPorMonedero) {
+                    ticketNodo.ref.child("leido_por_ticket").setValue(true)
+                }
+
+                // ✅ AGREGA A LA LISTA SI NO EXISTE
+                if (listaTickets.none { it.codigo == codigo }) {
+                    val minutos = (monto * 100).toInt()
+                    val horas = minutos / 60
+                    val mins = minutos % 60
+                    val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
+
+                    listaTickets.add(0, Ticket(
+                        codigo = codigo,
+                        monto = monto.toFloat(),
+                        minutos = minutos,
+                        tiempoStr = tiempoStr,
+                        fecha = fecha,
+                        estado = "CREADO",
+                        tiempoRestanteSeg = minutos * 60
+                    ))
+                    gestorTickets.guardar(listaTickets)
+                }
+
+                // ✅ BORRA EL TICKET CUANDO LOS 3 LO HAN LEÍDO
+                if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
+                    ticketNodo.ref.removeValue()
                 }
             }
         }
@@ -297,7 +295,7 @@ fun PantallaPrincipal() {
     val cPausados by remember { derivedStateOf { listaTickets.count { it.estado == "PAUSADO" } } }
     val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // BLOQUE DEL RELOJ - ARREGLADO DEFINITIVAMENTE
+    // RELOJ DE TIEMPO ARREGLADO
     LaunchedEffect(Unit) {
         trabajoReloj = launch {
             while (true) {
@@ -443,7 +441,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("CÓDIGO DE ACTIVACIÓN", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        // ✅ SOLO CAMBIÉ ESTA PARTE: ASEGURA DATOS COMPLETOS Y SIN ERRORES
                                         val horaQR = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                                         val contenidoQR = "COD:${t.codigo}|MONTO:${t.monto}|MIN:${t.minutos}|HORA:${horaQR}"
                                         Image(remember { generarCodigoQR(contenidoQR) }.asImageBitmap(), null, 

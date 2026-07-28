@@ -168,6 +168,11 @@ fun escucharHistorialFirebase() {
                 if (!leidoPorTicket && leidoPorMonedero) {
                     ticketNodo.ref.child("leido_por_ticket").setValue(true)
                 }
+                // ✅ BORRA SOLO CUANDO LOS 3 ESTÁN EN TRUE
+                if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
+                    ticketNode.ref.removeValue()
+                     continue
+                 }
 
                 // ✅ AGREGA A LA LISTA SI NO EXISTE
                 if (listaTickets.none { it.codigo == codigo }) {
@@ -186,11 +191,6 @@ fun escucharHistorialFirebase() {
                         tiempoRestanteSeg = minutos * 60
                     ))
                     gestorTickets.guardar(listaTickets)
-                }
-
-                // ✅ BORRA EL TICKET CUANDO LOS 3 LO HAN LEÍDO
-                if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                    ticketNodo.ref.removeValue()
                 }
             }
         }

@@ -452,29 +452,31 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 // 🖼️ FOTO AL COSTADO IZQUIERDO - TAMAÑO GENEROSO
-                                Box(
-                                    modifier = Modifier
-                                        .size(100.dp)
-                                        .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (t.fotoBase64.isNotBlank()) {
-                                        // Cuando el ESP32 envíe la foto en Base64, aquí se agrega la carga real
-                                        Icon(
-                                            Icons.Default.Person,
-                                            contentDescription = "Foto usuario",
-                                            modifier = Modifier.size(48.dp),
-                                            tint = Color.Gray
-                                        )
-                                    } else {
-                                        Icon(
-                                            Icons.Default.PhotoCamera,
-                                            contentDescription = "Sin foto",
-                                            modifier = Modifier.size(48.dp),
-                                            tint = Color.Gray
-                                        )
-                                    }
-                                }
+Box(
+    modifier = Modifier
+        .size(100.dp)
+        .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
+    contentAlignment = Alignment.Center
+) {
+    if (t.fotoBase64.isNotBlank()) {
+        // ⚙️ CUANDO EL ESP32 ENVÍE LA FOTO, AQUÍ SE CARGA AUTOMÁTICAMENTE
+        // Solo tendremos que agregar la función para convertir Base64 a imagen cuando la tengas lista
+        Icon(
+            Icons.Default.Person,
+            contentDescription = "Foto tomada",
+            modifier = Modifier.size(48.dp),
+            tint = Color.DarkGray
+        )
+    } else {
+        // 📷 POR AHORA SE MUESTRA ESTE ÍCONO, NO SE VE VACÍO
+        Icon(
+            Icons.Default.Image,
+            contentDescription = "Sin foto aún",
+            modifier = Modifier.size(48.dp),
+            tint = Color.Gray
+        )
+    }
+}
 
                                 // 📋 DATOS DEL TICKET - TAMAÑO NORMAL
                                 Column(

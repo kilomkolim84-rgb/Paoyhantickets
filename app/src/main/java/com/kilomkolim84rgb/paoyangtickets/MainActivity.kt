@@ -319,7 +319,7 @@ fun PantallaPrincipal() {
         }
     }
 
-    // DIÁLOGOS - SOLO LOS 3 QUE QUEDAN
+    // DIÁLOGOS
     if (abrirConfig1) Dialog(onDismissRequest = { abrirConfig1 = false }) { VentanaConfigMikrotik(1, "ROUTER #1") { abrirConfig1 = false } }
     if (abrirConfig2) Dialog(onDismissRequest = { abrirConfig2 = false }) { VentanaConfigMikrotik(2, "ROUTER #2") { abrirConfig2 = false } }
     if (abrirCreados) Dialog(onDismissRequest = { abrirCreados = false }) { TicketsCreadosVentana { abrirCreados = false } }
@@ -416,41 +416,139 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     val filtro = remember(buscar, listaTickets.size) {
         listaTickets.filter { it.estado == "CREADO" && (buscar.isBlank() || it.codigo.contains(buscar, true)) }
     }
+
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(24.dp).height(550.dp)) {
             Text("📋 TICKETS CREADOS (${filtro.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(buscar, { buscar = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar código") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
+            OutlinedTextField(
+                value = buscar,
+                onValueChange = { buscar = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Buscar código") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true
+            )
             Spacer(modifier = Modifier.height(12.dp))
+
             Column(modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f)) {
-                if (filtro.isEmpty()) Text("📭 Sin tickets creados", color = Color.Gray, modifier = Modifier.padding(16.dp))
-                else filtro.forEach { t ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("🆔 ${t.codigo}", fontWeight = FontWeight.Bold)
-                                Text("💰 S/ %.2f".format(t.monto), color = Color(0xFF22C55E))
-                                Text("⏱️ ${t.tiempoStr}", color = Color.Gray)
-                                Text("📅 ${t.fecha}", fontSize = 12.sp, color = Color.Gray)
-                                if (t.fotoBase64.isNotBlank()) Text("📸 Foto cargada", fontSize = 12.sp, color = Color(0xFF6366F1))
+                if (filtro.isEmpty()) {
+                    Text("📭 Sin tickets creados", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                } else {
+                    filtro.forEach { t ->
+                        var verQR by remember { mutableStateOf(false) }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // 🖼️ FOTO AL COSTADO IZQUIERDO - TAMAÑO GENEROSO
+                                Box(
+                                    modifier = Modifier
+                                        .size(100.dp)
+                                        .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (t.fotoBase64.isNotBlank()) {
+                                        // Cuando el ESP32 envíe la foto en Base64, aquí se agrega la carga real
+                                        Icon(
+                                            Icons.Default.Person,
+                                            contentDescription = "Foto usuario",
+                                            modifier = Modifier.size(48.dp),
+                                            tint = Color.Gray
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.PhotoCamera,
+                                            contentDescription = "Sin foto",
+                                            modifier = Modifier.size(48.dp),
+                                            tint = Color.Gray
+                                        )
+                                    }
+                                }
+
+                                // 📋 DATOS DEL TICKET - TAMAÑO NORMAL
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "🆔 ${t.codigo}",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "💰 S/ %.2f".format(t.monto),
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF22C55E)
+                                    )
+                                    Text(
+                                        text = "⏱️ ${t.tiempoStr}",
+                                        fontSize = 15.sp,
+                                        color = Color.Gray
+                                    )
+                                    Text(
+                                        text = "📅 ${t.fecha}",
+                                        fontSize = 13.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+
+                                // 🟣 BOTÓN VER QR
+                                Button(
+                                    onClick = { verQR = true },
+                                    modifier = Modifier.height(42.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(Color(0xFF7E57C2))
+                                ) {
+                                    Text("VER QR", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                            var verQR by remember { mutableStateOf(false) }
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Button(onClick = { verQR = true }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("VER QR", fontSize = 12.sp) }
-                            }
-                            if (verQR) Dialog(onDismissRequest = { verQR = false }) {
-                                Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
-                                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        }
+
+                        // 📱 VENTANA DEL CÓDIGO QR
+                        if (verQR) {
+                            Dialog(onDismissRequest = { verQR = false }) {
+                                Card(modifier = Modifier.padding(24.dp), shape = RoundedCornerShape(16.dp)) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
                                         Text("CÓDIGO DE ACTIVACIÓN", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                         Spacer(modifier = Modifier.height(16.dp))
                                         val horaQR = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                                         val contenidoQR = "COD:${t.codigo}|MONTO:${t.monto}|MIN:${t.minutos}|HORA:${horaQR}"
-                                        Image(remember { generarCodigoQR(contenidoQR) }.asImageBitmap(), null,
-                                            modifier = Modifier.size(250.dp).border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp)))
+
+                                        Image(
+                                            bitmap = remember { generarCodigoQR(contenidoQR) }.asImageBitmap(),
+                                            contentDescription = "Código QR",
+                                            modifier = Modifier
+                                                .size(260.dp)
+                                                .border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp))
+                                        )
+
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        Text("Código: ${t.codigo}\nS/ %.2f - ${t.tiempoStr}".format(t.monto), fontSize = 15.sp)
+                                        Text(
+                                            text = "Código: ${t.codigo}\nS/ %.2f - ${t.tiempoStr}".format(t.monto),
+                                            fontSize = 15.sp
+                                        )
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        Button(onClick = { verQR = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+                                        Button(
+                                            onClick = { verQR = false },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) { Text("CERRAR") }
                                     }
                                 }
                             }
@@ -458,8 +556,13 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                     }
                 }
             }
+
             Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+            Button(
+                onClick = onCerrar,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("CERRAR", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
         }
     }
 }

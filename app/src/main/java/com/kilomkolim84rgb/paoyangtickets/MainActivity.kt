@@ -170,7 +170,7 @@ fun escucharHistorialFirebase() {
                 }
                 // ✅ BORRA SOLO CUANDO LOS 3 ESTÁN EN TRUE
                 if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                    ticketNode.ref.removeValue()
+                    ticketNodo.ref.removeValue()
                      continue
                  }
 

@@ -97,7 +97,7 @@ class TicketManager(context: Context) {
             var linea: String?
             while (lector.readLine().also { linea = it } != null) {
                 val datos = linea!!.split("|")
-                if (datos.size >= 11) {
+                if (datos.size >= 12) {
                     lista.add(
                         Ticket(
                             codigo = datos[0],
@@ -136,7 +136,7 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
-// ============= ESCUCHA FIREBASE INTACTA ✅ =============
+// ============= ESCUCHA FIREBASE =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
@@ -155,7 +155,7 @@ fun escucharHistorialFirebase() {
                 if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                 if (monto <= 0.0) continue
 
-                // ✅ DETECTA SI EL PORTAL LO USÓ → PASA A ACTIVO
+                // Pasa a ACTIVO cuando el portal lo usó
                 if (leidoPorPortal) {
                     val idx = listaTickets.indexOfFirst { it.codigo == codigo }
                     if (idx >= 0 && listaTickets[idx].estado == "CREADO") {
@@ -164,23 +164,24 @@ fun escucharHistorialFirebase() {
                     }
                 }
 
-                // ✅ MARCA LEÍDO SOLO SI YA LO HIZO EL MONEDERO
+                // Marca leído por ticket solo si ya lo vio el monedero
                 if (!leidoPorTicket && leidoPorMonedero) {
                     ticketNodo.ref.child("leido_por_ticket").setValue(true)
                 }
 
-                // ✅ BORRA AUTOMÁTICO SOLO CUANDO LOS 3 SON TRUE
+                // Borra solo cuando LOS 3 son TRUE
                 if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
                     ticketNodo.ref.removeValue()
                     continue
                 }
 
-                // ✅ AGREGA NUEVO TICKET SI NO EXISTE
+                // Agrega ticket nuevo si no existe
                 if (listaTickets.none { it.codigo == codigo }) {
                     val minutos = (monto * 100).toInt()
                     val horas = minutos / 60
                     val mins = minutos % 60
                     val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
+                    val foto = ticketNodo.child("fotoBase64").getValue(String::class.java) ?: ""
 
                     listaTickets.add(0, Ticket(
                         codigo = codigo,
@@ -189,7 +190,8 @@ fun escucharHistorialFirebase() {
                         tiempoStr = tiempoStr,
                         fecha = fecha,
                         estado = "CREADO",
-                        tiempoRestanteSeg = minutos * 60
+                        tiempoRestanteSeg = minutos * 60,
+                        fotoBase64 = foto
                     ))
                     gestorTickets.guardar(listaTickets)
                 }
@@ -277,10 +279,10 @@ fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: B
     }
 }
 
-// ============= PANTALLA PRINCIPAL REESTRUCTURADA =============
+// ============= PANTALLA PRINCIPAL =============
 @Composable
 fun PantallaPrincipal() {
-    var routerSeleccionado by remember { mutableStateOf(2) } // Por defecto RB3011 que gestiona tickets
+    var routerSeleccionado by remember { mutableStateOf(2) }
     var abrirConfig1 by remember { mutableStateOf(false) }
     var abrirConfig2 by remember { mutableStateOf(false) }
     var abrirCreados by remember { mutableStateOf(false) }
@@ -293,7 +295,7 @@ fun PantallaPrincipal() {
     val cActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
     val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
-    // ⏱️ RELOJ CONTINUO, NO SE DETIENE
+    // Reloj que no se detiene
     LaunchedEffect(Unit) {
         trabajoReloj = launch {
             while (true) {
@@ -319,7 +321,7 @@ fun PantallaPrincipal() {
         }
     }
 
-    // DIÁLOGOS
+    // Ventanas
     if (abrirConfig1) Dialog(onDismissRequest = { abrirConfig1 = false }) { VentanaConfigMikrotik(1, "ROUTER #1") { abrirConfig1 = false } }
     if (abrirConfig2) Dialog(onDismissRequest = { abrirConfig2 = false }) { VentanaConfigMikrotik(2, "ROUTER #2") { abrirConfig2 = false } }
     if (abrirCreados) Dialog(onDismissRequest = { abrirCreados = false }) { TicketsCreadosVentana { abrirCreados = false } }
@@ -409,7 +411,7 @@ data class Ticket(
     val fotoBase64: String = ""
 )
 
-// ============= VENTANAS AJUSTADAS =============
+// ============= VENTANA TICKETS CREADOS - ARREGLADA SIN ERRORES =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }
@@ -451,34 +453,22 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                // 🖼️ FOTO AL COSTADO IZQUIERDO - TAMAÑO GENEROSO
-Box(
-    modifier = Modifier
-        .size(100.dp)
-        .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
-    contentAlignment = Alignment.Center
-) {
-    if (t.fotoBase64.isNotBlank()) {
-        // ⚙️ CUANDO EL ESP32 ENVÍE LA FOTO, AQUÍ SE CARGA AUTOMÁTICAMENTE
-        // Solo tendremos que agregar la función para convertir Base64 a imagen cuando la tengas lista
-        Icon(
-            Icons.Default.Person,
-            contentDescription = "Foto tomada",
-            modifier = Modifier.size(48.dp),
-            tint = Color.DarkGray
-        )
-    } else {
-        // 📷 POR AHORA SE MUESTRA ESTE ÍCONO, NO SE VE VACÍO
-        Icon(
-            Icons.Default.Image,
-            contentDescription = "Sin foto aún",
-            modifier = Modifier.size(48.dp),
-            tint = Color.Gray
-        )
-    }
-}
+                                // 🖼️ CUADRO DE FOTO SIN ERRORES
+                                Box(
+                                    modifier = Modifier
+                                        .size(100.dp)
+                                        .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Person,
+                                        contentDescription = "Foto / Sin foto",
+                                        modifier = Modifier.size(48.dp),
+                                        tint = Color.Gray
+                                    )
+                                }
 
-                                // 📋 DATOS DEL TICKET - TAMAÑO NORMAL
+                                // 📋 DATOS DEL TICKET
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)
@@ -519,7 +509,7 @@ Box(
                             }
                         }
 
-                        // 📱 VENTANA DEL CÓDIGO QR
+                        // VENTANA QR
                         if (verQR) {
                             Dialog(onDismissRequest = { verQR = false }) {
                                 Card(modifier = Modifier.padding(24.dp), shape = RoundedCornerShape(16.dp)) {
@@ -569,6 +559,7 @@ Box(
     }
 }
 
+// ============= VENTANA TICKETS ACTIVOS =============
 @Composable
 fun TicketsActivosVentana(onCerrar: () -> Unit) {
     val activos = remember(listaTickets.size) { listaTickets.filter { it.estado == "ACTIVO" } }
@@ -604,6 +595,7 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
     }
 }
 
+// ============= VENTANA TICKETS VENCIDOS =============
 @Composable
 fun TicketsVencidosVentana(onCerrar: () -> Unit) {
     val vencidos = remember(listaTickets.size) { listaTickets.filter { it.estado == "VENCIDO" } }

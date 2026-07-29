@@ -138,9 +138,11 @@ val listaTickets = mutableStateListOf<Ticket>()
 
 // ================== ESCUCHA FIREBASE 100% FUNCIONAL ==================
 fun escucharHistorialFirebase() {
+    // ✅ LIMPIA ANTES DE CARGAR PARA NO TENER DATOS VIEJOS
+    listaTickets.clear()
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
-
+    
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {

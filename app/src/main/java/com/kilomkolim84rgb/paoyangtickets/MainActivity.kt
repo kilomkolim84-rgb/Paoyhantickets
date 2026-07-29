@@ -85,7 +85,7 @@ class MikrotikConfig(context: Context) {
 
 lateinit var configMikrotik: MikrotikConfig
 
-// ============= GESTOR DE TICKETS ARREGLADO =============
+// ============= GESTOR DE TICKETS =============
 class TicketManager(context: Context) {
     private val archivo = File(context.filesDir, "tickets_guardados.txt")
 
@@ -136,72 +136,85 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
-// ============= ESCUCHA FIREBASE 100% AJUSTADA =============
+// ================== ESCUCHA FIREBASE 100% FUNCIONAL ==================
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
-    println("✅ Cargados ${listaTickets.size} tickets guardados localmente")
+    println("✅ Cargados ${listaTickets.size} tickets guardados")
 
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            println("🔍 Total de tickets encontrados en Firebase: ${snapshot.childrenCount}")
-            
+            println("🔍 Total en Firebase: ${snapshot.childrenCount}")
+
             for (ticketNodo in snapshot.children) {
                 val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
                 val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
                 val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
-                val minutos = ticketNodo.child("tiempo_minutos").getValue(Int::class.java) ?: 0
                 val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java) ?: false
                 val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
                 val leidoPorPortal = ticketNodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
                 val foto = ticketNodo.child("fotoBase64").getValue(String::class.java) ?: ""
 
-                println("📋 Procesando: $codigo | S/ $monto | $minutos min")
+                // ✅ VALIDACIONES CORRECTAS
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) {
+                    println("⚠️ Código inválido: $codigo")
+                    continue
+                }
+                if (monto <= 0.0) {
+                    println("⚠️ Monto inválido para: $codigo")
+                    continue
+                }
 
-                // Borrado automático desactivado temporalmente
-                // if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
-                //     ticketNodo.ref.removeValue()
-                //     continue
-                // }
+                // ✅ CALCULO DE TIEMPO CORRECTO: 10 céntimos = 10 minutos
+                val minutos = (monto * 100).toInt()
+                val horas = minutos / 60
+                val mins = minutos % 60
+                val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
 
-                // Marca leído por ticket solo si el monedero ya lo leyó
+                println("📋 Procesando: $codigo | S/ $monto | $tiempoStr | Leídos: T=$leidoPorTicket M=$leidoPorMonedero P=$leidoPorPortal")
+
+                // ✅ MARCA LEÍDO POR TICKET SOLO SI EL MONEDERO YA LO HIZO
                 if (!leidoPorTicket && leidoPorMonedero) {
                     ticketNodo.ref.child("leido_por_ticket").setValue(true)
+                    println("📌 Marcado leído por Ticket: $codigo")
                 }
 
-                // Cambia estado a ACTIVO cuando el portal lo usa
-                if (leidoPorPortal) {
-                    val idx = listaTickets.indexOfFirst { it.codigo == codigo }
-                    if (idx >= 0 && listaTickets[idx].estado == "CREADO") {
-                        listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO")
-                        gestorTickets.guardar(listaTickets)
-                    }
-                }
+                // ✅ DETECTA SI YA FUE USADO EN EL PORTAL
+                val estadoInicial = if (leidoPorPortal) "ACTIVO" else "CREADO"
 
-                // Agrega ticket nuevo si no existe en la lista
+                // ✅ AGREGA SI NO EXISTE
                 if (listaTickets.none { it.codigo == codigo }) {
-                    val horas = minutos / 60
-                    val mins = minutos % 60
-                    val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
-
                     listaTickets.add(0, Ticket(
                         codigo = codigo,
                         monto = monto.toFloat(),
                         minutos = minutos,
                         tiempoStr = tiempoStr,
                         fecha = fecha,
-                        estado = "CREADO",
-                        tiempoRestanteSeg = minutos * 60,
-                        fotoBase64 = foto
+                        estado = estadoInicial,
+                        tiempoRestanteSeg = minutos * 60
                     ))
                     gestorTickets.guardar(listaTickets)
-                    println("✅ Agregado correctamente a la lista: $codigo")
+                    println("✅ AGREGADO: $codigo - $estadoInicial")
+                } else {
+                    // ✅ ACTUALIZA ESTADO SI YA EXISTE
+                    val idx = listaTickets.indexOfFirst { it.codigo == codigo }
+                    if (idx >= 0 && leidoPorPortal && listaTickets[idx].estado == "CREADO") {
+                        listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO")
+                        gestorTickets.guardar(listaTickets)
+                        println("🔄 Cambiado a ACTIVO: $codigo")
+                    }
                 }
+
+                // ✅ BORRADO COMENTADO HASTA QUE PRUEBES TODO BIEN
+                // if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
+                //     ticketNodo.ref.removeValue()
+                //     println("🗑️ Borrado: $codigo")
+                // }
             }
         }
 
         override fun onCancelled(error: DatabaseError) {
-            println("❌ Error al leer Firebase: ${error.message}")
+            println("❌ Error Firebase: ${error.message}")
         }
     })
 }
@@ -415,7 +428,7 @@ data class Ticket(
     val fotoBase64: String = ""
 )
 
-// ============= VENTANA TICKETS CREADOS =============
+// ============= VENTANA TICKETS CREADOS - ARREGLADA SIN ERRORES =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }
@@ -457,7 +470,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                // Cuadro de foto
+                                // 🖼️ CUADRO DE FOTO SIN ERRORES
                                 Box(
                                     modifier = Modifier
                                         .size(100.dp)
@@ -472,7 +485,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     )
                                 }
 
-                                // Datos del ticket
+                                // 📋 DATOS DEL TICKET
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)
@@ -501,7 +514,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                     )
                                 }
 
-                                // Botón ver QR
+                                // 🟣 BOTÓN VER QR
                                 Button(
                                     onClick = { verQR = true },
                                     modifier = Modifier.height(42.dp),
@@ -513,7 +526,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                             }
                         }
 
-                        // Ventana QR
+                        // VENTANA QR
                         if (verQR) {
                             Dialog(onDismissRequest = { verQR = false }) {
                                 Card(modifier = Modifier.padding(24.dp), shape = RoundedCornerShape(16.dp)) {

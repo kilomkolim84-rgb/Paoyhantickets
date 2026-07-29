@@ -3,6 +3,7 @@ package com.kilomkolim84rgb.paoyangtickets
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import android.widget.Toast
@@ -36,6 +37,7 @@ import kotlinx.coroutines.launch
 import java.io.*
 import java.text.SimpleDateFormat
 import java.util.*
+import android.util.Base64
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,7 +99,7 @@ class TicketManager(context: Context) {
             var linea: String?
             while (lector.readLine().also { linea = it } != null) {
                 val datos = linea!!.split("|")
-                if (datos.size >= 11) {
+                if (datos.size >= 12) {
                     lista.add(
                         Ticket(
                             codigo = datos[0],
@@ -113,7 +115,7 @@ class TicketManager(context: Context) {
                             macUsuario = datos.getOrNull(10) ?: "",
                             fotoBase64 = datos.getOrNull(11) ?: ""
                         )
-                    )
+                    }
                 }
             }
             lector.close()
@@ -136,7 +138,7 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
-// ============= ESCUCHA FIREBASE INTACTA ✅ =============
+// ============= ESCUCHA FIREBASE INTACTA =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
@@ -149,6 +151,7 @@ fun escucharHistorialFirebase() {
                 val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
                 val tiempoMinutos = ticketNodo.child("tiempo_minutos").getValue(Int::class.java) ?: 0
                 val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
+                val fotoBase64 = ticketNodo.child("fotoBase64").getValue(String::class.java) ?: ""
                 val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java) ?: false
                 val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
                 val leidoPorPortal = ticketNodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
@@ -156,7 +159,16 @@ fun escucharHistorialFirebase() {
                 if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                 if (monto <= 0.0 && tiempoMinutos <= 0) continue
 
-                // ✅ DETECTA SI EL PORTAL LO USÓ → PASA A ACTIVO
+                // Actualizar foto si viene nueva desde Firebase/ESP32
+                if (fotoBase64.isNotBlank()) {
+                    val idx = listaTickets.indexOfFirst { it.codigo == codigo }
+                    if (idx >= 0 && listaTickets[idx].fotoBase64.isBlank()) {
+                        listaTickets[idx] = listaTickets[idx].copy(fotoBase64 = fotoBase64)
+                        gestorTickets.guardar(listaTickets)
+                    }
+                }
+
+                // Cambia a activo cuando el portal lo usa
                 if (leidoPorPortal) {
                     val idx = listaTickets.indexOfFirst { it.codigo == codigo }
                     if (idx >= 0 && listaTickets[idx].estado == "CREADO") {
@@ -165,18 +177,18 @@ fun escucharHistorialFirebase() {
                     }
                 }
 
-                // ✅ MARCA LEÍDO SOLO SI YA LO HIZO EL MONEDERO
+                // Marca como leído
                 if (!leidoPorTicket && leidoPorMonedero) {
                     ticketNodo.ref.child("leido_por_ticket").setValue(true)
                 }
 
-                // ✅ BORRA AUTOMÁTICO SOLO CUANDO LOS 3 SON TRUE
+                // Borra cuando todo está listo
                 if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
                     ticketNodo.ref.removeValue()
                     continue
                 }
 
-                // ✅ AGREGA NUEVO TICKET SI NO EXISTE
+                // Agrega ticket nuevo
                 if (listaTickets.none { it.codigo == codigo }) {
                     val minutos = if (tiempoMinutos > 0) tiempoMinutos else (monto * 100).toInt()
                     val horas = minutos / 60
@@ -190,7 +202,8 @@ fun escucharHistorialFirebase() {
                         tiempoStr = tiempoStr,
                         fecha = fecha,
                         estado = "CREADO",
-                        tiempoRestanteSeg = minutos * 60
+                        tiempoRestanteSeg = minutos * 60,
+                        fotoBase64 = fotoBase64
                     ))
                     gestorTickets.guardar(listaTickets)
                 }
@@ -206,6 +219,16 @@ fun formatearTiempo(segundos: Int): String {
     val m = (segundos % 3600) / 60
     val s = segundos % 60
     return String.format("%02d:%02d:%02d", h, m, s)
+}
+
+// Función para convertir la foto de texto a imagen
+fun base64ABitmap(base64: String): Bitmap? {
+    return try {
+        val bytes = Base64.decode(base64, Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    } catch (e: Exception) {
+        null
+    }
 }
 
 // ============= VENTANA CONFIGURACIÓN =============
@@ -433,12 +456,19 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 Text("💰 S/ %.2f".format(t.monto), color = Color(0xFF22C55E))
                                 Text("⏱️ ${t.tiempoStr}", color = Color.Gray)
                                 Text("📅 ${t.fecha}", fontSize = 12.sp, color = Color.Gray)
-                                if (t.fotoBase64.isNotBlank()) Text("📸 Foto cargada", fontSize = 12.sp, color = Color(0xFF6366F1))
+                                if (t.fotoBase64.isNotBlank()) Text("📸 Foto registrada", fontSize = 12.sp, color = Color(0xFF6366F1))
                             }
                             var verQR by remember { mutableStateOf(false) }
+                            var verFoto by remember { mutableStateOf(false) }
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(onClick = { verQR = true }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("VER QR", fontSize = 12.sp) }
+                                // NUEVO BOTÓN VER FOTO - LISTO PARA LA ESP32
+                                Button(onClick = { verFoto = true }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF8B5CF6)), enabled = t.fotoBase64.isNotBlank()) {
+                                    Text(if (t.fotoBase64.isNotBlank()) "VER FOTO" else "SIN FOTO", fontSize = 12.sp)
+                                }
                             }
+
+                            // Ventana para ver QR igual que antes
                             if (verQR) Dialog(onDismissRequest = { verQR = false }) {
                                 Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
                                     Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -449,9 +479,30 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         Image(remember { generarCodigoQR(contenidoQR) }.asImageBitmap(), null,
                                             modifier = Modifier.size(250.dp).border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp)))
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        Text("Código: ${t.codigo}\nS/ %.2f - ${t.tiempoStr}".format(t.monto), fontSize = 15.sp)
+                                        Text("Código: ${t.codigo}\nS/ %.2f - ${t.tiempoStr}\nFecha: ${t.fecha}".format(t.monto), fontSize = 15.sp)
                                         Spacer(modifier = Modifier.height(16.dp))
                                         Button(onClick = { verQR = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+                                    }
+                                }
+                            }
+
+                            // VENTANA NUEVA PARA VER LA FOTO AMPLIADA
+                            if (verFoto && t.fotoBase64.isNotBlank()) Dialog(onDismissRequest = { verFoto = false }) {
+                                Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+                                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("📸 FOTO DEL USUARIO", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        val fotoBitmap = remember { base64ABitmap(t.fotoBase64) }
+                                        if (fotoBitmap != null) {
+                                            Image(fotoBitmap.asImageBitmap(), null,
+                                                modifier = Modifier.size(300.dp).border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp)))
+                                        } else {
+                                            Text("No se pudo cargar la imagen", color = Color.Red)
+                                        }
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("Código: ${t.codigo}\nMonto: S/ %.2f\nTiempo: ${t.tiempoStr}\nFecha y hora: ${t.fecha}".format(t.monto), fontSize = 15.sp)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(onClick = { verFoto = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
                                     }
                                 }
                             }

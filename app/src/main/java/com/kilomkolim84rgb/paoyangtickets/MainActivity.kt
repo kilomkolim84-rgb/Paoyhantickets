@@ -35,6 +35,8 @@ import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.*
 import java.net.Socket
 import java.text.SimpleDateFormat
@@ -53,13 +55,124 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
+// ============= CONEXIÓN REAL AL MIKROTIK — PROTOCOLO COMPLETO =============
+object MikrotikAPI {
+    var ultimoError: String = ""
+
+    suspend fun probarConexion(ip: String, puerto: Int, usuario: String, clave: String): Boolean {
+        ultimoError = ""
+        return withContext(Dispatchers.IO) {
+            try {
+                val socket = Socket(ip, puerto)
+                socket.soTimeout = 5000
+                val entrada = socket.getInputStream()
+                val salida = socket.getOutputStream()
+
+                // PASO 1: Enviar /login
+                enviarComando(salida, "/login")
+
+                // PASO 2: Recibir el reto
+                val respuesta = leerRespuesta(entrada)
+                val reto = respuesta.firstOrNull { it.startsWith("=ret=") }?.substring(5)
+                
+                if (reto.isNullOrEmpty()) {
+                    ultimoError = "No recibió respuesta del router"
+                    socket.close()
+                    return@withContext false
+                }
+
+                // PASO 3: Enviar usuario + contraseña cifrada
+                val hash = cifrarConReto(clave, reto)
+                enviarComando(salida, "/login", "=name=$usuario", "=response=$hash")
+
+                // PASO 4: Verificar resultado
+                val final = leerRespuesta(entrada)
+                socket.close()
+
+                if (final.any { it == "!done" }) {
+                    true
+                } else {
+                    ultimoError = final.firstOrNull { it.startsWith("!") } ?: "Credenciales incorrectas"
+                    false
+                }
+            } catch (e: Exception) {
+                ultimoError = e.message ?: "No se pudo conectar"
+                false
+            }
+        }
+    }
+
+    private fun enviarComando(salida: OutputStream, vararg partes: String) {
+        partes.forEach { cmd ->
+            val bytes = cmd.toByteArray(Charsets.UTF_8)
+            escribirLongitud(salida, bytes.size)
+            salida.write(bytes)
+        }
+        escribirLongitud(salida, 0)
+        salida.flush()
+    }
+
+    private fun escribirLongitud(salida: OutputStream, len: Int) {
+        when {
+            len < 0x80 -> salida.write(len)
+            len < 0x4000 -> {
+                salida.write(0x80 or (len shr 8))
+                salida.write(len and 0xFF)
+            }
+            len < 0x200000 -> {
+                salida.write(0xC0 or (len shr 16))
+                salida.write((len shr 8) and 0xFF)
+                salida.write(len and 0xFF)
+            }
+            else -> {
+                salida.write(0xE0 or (len shr 24))
+                salida.write((len shr 16) and 0xFF)
+                salida.write((len shr 8) and 0xFF)
+                salida.write(len and 0xFF)
+            }
+        }
+    }
+
+    private fun leerRespuesta(entrada: InputStream): List<String> {
+        val resp = mutableListOf<String>()
+        while (true) {
+            val len = leerLongitud(entrada)
+            if (len == 0) break
+            val datos = ByteArray(len)
+            entrada.read(datos)
+            resp.add(String(datos, Charsets.UTF_8))
+        }
+        return resp
+    }
+
+    private fun leerLongitud(entrada: InputStream): Int {
+        var b = entrada.read()
+        return when {
+            b < 0x80 -> b
+            b < 0xC0 -> ((b and 0x7F) shl 8) or entrada.read()
+            b < 0xE0 -> ((b and 0x3F) shl 16) or (entrada.read() shl 8) or entrada.read()
+            b < 0xF0 -> ((b and 0x1F) shl 24) or (entrada.read() shl 16) or (entrada.read() shl 8) or entrada.read()
+            else -> entrada.read()
+        }
+    }
+
+    private fun cifrarConReto(clave: String, retoHex: String): String {
+        val retoBytes = retoHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val claveBytes = clave.toByteArray(Charsets.UTF_8)
+        val datos = byteArrayOf(0) + retoBytes + claveBytes
+        val md = java.security.MessageDigest.getInstance("MD5")
+        val hash = md.digest(datos)
+        return hash.joinToString("") { "%02x".format(it) }
+    }
+}
+
 // ============= GESTOR DE CONFIGURACIÓN MIKROTIK =============
 class MikrotikConfig(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
 
     data class Config(
         val ip: String = "",
-        val puerto: String = "8728",  // FIJO, NO SE VE EN PANTALLA
+        val puerto: String = "8728",
         val usuario: String = "admin",
         val clave: String = "",
         val dns: String = ""
@@ -68,7 +181,7 @@ class MikrotikConfig(context: Context) {
     fun cargar(id: Int): Config {
         return Config(
             ip = prefs.getString("r${id}_ip", "") ?: "",
-            puerto = "8728",  // SIEMPRE 8728, FIJO
+            puerto = "8728",
             usuario = prefs.getString("r${id}_usuario", "admin") ?: "admin",
             clave = prefs.getString("r${id}_clave", "") ?: "",
             dns = prefs.getString("r${id}_dns", "") ?: ""
@@ -147,7 +260,6 @@ lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 val listaClientesLAN = mutableStateListOf<ClienteLAN>()
 
-// Función auxiliar para convertir foto de texto a imagen
 fun base64ABitmap(base64: String): Bitmap? {
     return try {
         val bytes = Base64.decode(base64, Base64.DEFAULT)
@@ -157,7 +269,7 @@ fun base64ABitmap(base64: String): Bitmap? {
     }
 }
 
-// ============= ESCUCHA FIREBASE INTACTA =============
+// ============= ESCUCHA FIREBASE =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
     println("✅ Cargados ${listaTickets.size} tickets guardados")
@@ -235,7 +347,7 @@ fun formatearTiempo(segundos: Int): String {
     return String.format("%02d:%02d:%02d", h, m, s)
 }
 
-// ============= VENTANA CONFIGURACIÓN — SIN PUERTO =============
+// ============= VENTANA CONFIGURACIÓN — CONEXIÓN REAL =============
 @Composable
 fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> Unit) {
     val contexto = androidx.compose.ui.platform.LocalContext.current
@@ -246,6 +358,7 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
     var clave by remember { mutableStateOf(config.clave) }
     var dns by remember { mutableStateOf(config.dns) }
     var mensajeEstado by remember { mutableStateOf<String?>(null) }
+    var probando by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
         Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -265,15 +378,41 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { 
-                    mensajeEstado = if (ip.isNotBlank()) "✅ Conexión válida (Puerto 8728)" else "❌ Ingrese la IP" 
-                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
-                Button(onClick = {
-                    if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
-                    configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, "8728", usuario, clave, dns))
-                    mensajeEstado = "✅ Guardado"
-                    Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
-                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
+                Button(
+                    onClick = {
+                        if (ip.isBlank()) {
+                            mensajeEstado = "❌ Ingrese la IP"
+                            return@Button
+                        }
+                        probando = true
+                        mensajeEstado = "🔄 Conectando..."
+                        kotlinx.coroutines.GlobalScope.launch {
+                            val ok = MikrotikAPI.probarConexion(ip, 8728, usuario, clave)
+                            mensajeEstado = if (ok) {
+                                "✅ CONECTADO — MikroTik respondió correctamente"
+                            } else {
+                                "❌ ERROR: ${MikrotikAPI.ultimoError}"
+                            }
+                            probando = false
+                        }
+                    },
+                    enabled = !probando,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(if (probando) "⏳..." else "🧪 PROBAR")
+                }
+                Button(
+                    onClick = {
+                        if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
+                        configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, "8728", usuario, clave, dns))
+                        mensajeEstado = "✅ Guardado"
+                        Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))
+                ) { Text("💾 GUARDAR") }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) { Text("CERRAR") }
@@ -281,7 +420,7 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
     }
 }
 
-// ============= TARJETA ROUTER — SIN PUERTO =============
+// ============= TARJETA ROUTER =============
 @Composable
 fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: Boolean, alTocar: () -> Unit, alConfigurar: () -> Unit) {
     val config = remember { configMikrotik.cargar(routerId) }
@@ -298,7 +437,7 @@ fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: B
                 Text(modelo, fontSize = 12.sp, color = Color.Gray)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text("IP: ${config.ip.ifBlank { "Sin config" }}", fontSize = 11.sp)
-                Text("Puerto: 8728", fontSize = 11.sp)  // FIJO, NO EDITABLE
+                Text("Puerto: 8728", fontSize = 11.sp)
             }
         }
     }
@@ -315,7 +454,6 @@ fun SeccionClientesLAN() {
             if (listaClientesLAN.isEmpty()) {
                 Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp))
             } else {
-                // Encabezados
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
                     Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
@@ -323,7 +461,6 @@ fun SeccionClientesLAN() {
                     Text("Bajada", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.2f))
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                // Lista de clientes
                 listaClientesLAN.forEach { cliente ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(cliente.ip, fontSize = 12.sp, modifier = Modifier.weight(0.25f))
@@ -358,7 +495,6 @@ fun PantallaPrincipal() {
             while (true) {
                 delay(1000)
                 var huboCambios = false
-
                 listaTickets.forEachIndexed { indice, ticket ->
                     if (ticket.estado == "ACTIVO") {
                         val nuevoTiempo = ticket.tiempoRestanteSeg - 1
@@ -370,10 +506,7 @@ fun PantallaPrincipal() {
                         huboCambios = true
                     }
                 }
-
-                if (huboCambios) {
-                    gestorTickets.guardar(listaTickets)
-                }
+                if (huboCambios) gestorTickets.guardar(listaTickets)
             }
         }
     }
@@ -385,7 +518,7 @@ fun PantallaPrincipal() {
     if (abrirVencidos) Dialog(onDismissRequest = { abrirVencidos = false }) { TicketsVencidosVentana { abrirVencidos = false } }
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("🎟️ PAOYANG TICKETS", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(vertical = 16.dp))
+        Text("🎟️ PAOYHAN TICKETS", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(vertical = 16.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             TarjetaRouter("📡 Router #1", "RB750Gr3", 1, routerSeleccionado == 1, { routerSeleccionado = 1 }, { abrirConfig1 = true })
@@ -421,7 +554,6 @@ fun PantallaPrincipal() {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        // === SECCIÓN CLIENTES LAN — NUEVA ===
         SeccionClientesLAN()
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -470,7 +602,7 @@ data class Ticket(
     val fotoBase64: String = ""
 )
 
-// ============= VENTANAS — INTACTAS =============
+// ============= VENTANAS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }

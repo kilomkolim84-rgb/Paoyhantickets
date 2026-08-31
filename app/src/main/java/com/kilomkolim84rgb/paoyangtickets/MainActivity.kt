@@ -41,6 +41,8 @@ import java.io.*
 import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.*
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 
 // ============= CONEXIÓN REAL AL MIKROTIK =============
 object MikrotikConnector {

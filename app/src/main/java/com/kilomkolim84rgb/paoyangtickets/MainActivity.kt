@@ -43,8 +43,34 @@ import java.text.SimpleDateFormat
 import java.util.*
 import javax.net.ssl.SSLContext
 
-// ============= CONEXIÓN Y LECTURA DE DATOS DEL MIKROTIK =============
+// ============= CONEXIÓN MIKROTIK — COMPATIBLE CON ROUTEROS 7.13 ✅ =============
 object MikrotikApi {
+    private suspend fun login(socket: Socket, usuario: String, clave: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val out = PrintWriter(socket.getOutputStream().writer(), true)
+                val `in` = BufferedReader(socket.getInputStream().reader())
+
+                out.println("/login")
+                out.println("=name=$usuario")
+                out.println("=password=$clave")
+                out.println("")
+                out.flush()
+
+                var linea: String?
+                while (`in`.readLine().also { linea = it } != null) {
+                    if (linea == "!done") return@withContext true
+                    if (linea.orEmpty().startsWith("!trap")) {
+                        println("Error login: $linea")
+                        return@withContext false
+                    }
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
     suspend fun testConexion(ip: String, puerto: Int, usuario: String, clave: String): String =
         withContext(Dispatchers.IO) {
             if (ip.isBlank() || puerto <= 0 || usuario.isBlank())
@@ -53,22 +79,14 @@ object MikrotikApi {
             try {
                 val socket = crearSocket(ip, puerto)
                 socket.soTimeout = 5000
-                val out = OutputStreamWriter(socket.getOutputStream())
-                val `in` = BufferedReader(InputStreamReader(socket.getInputStream()))
 
-                out.write("/login\n=name=$usuario\n=password=$clave\n\n")
-                out.flush()
-
-                var linea: String?
-                while (`in`.readLine().also { linea = it } != null) {
-                    if (linea == "!done") break
-                    if (linea.orEmpty().startsWith("!trap")) {
-                        socket.close()
-                        return@withContext "❌ Usuario o contraseña incorrectos"
-                    }
+                if (!login(socket, usuario, clave)) {
+                    socket.close()
+                    return@withContext "❌ Usuario o contraseña incorrectos"
                 }
+
                 socket.close()
-                "✅ Conectado — ${if (puerto == 8729) "API-SSL Seguro" else "API Normal"}"
+                "✅ Conexión exitosa — RouterOS 7.13"
             } catch (e: Exception) {
                 when (e) {
                     is java.net.SocketTimeoutException -> "❌ Sin respuesta — revisa puerto o firewall"
@@ -91,27 +109,23 @@ object MikrotikApi {
             try {
                 val socket = crearSocket(ip, puerto)
                 socket.soTimeout = 5000
-                val out = OutputStreamWriter(socket.getOutputStream())
-                val `in` = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val out = PrintWriter(socket.getOutputStream().writer(), true)
+                val `in` = BufferedReader(socket.getInputStream().reader())
 
-                // Login
-                out.write("/login\n=name=$usuario\n=password=$clave\n\n")
-                out.flush()
-                var linea: String?
-                var token = ""
-                while (`in`.readLine().also { linea = it } != null) {
-                    if (linea!!.startsWith("!done")) {
-                        if (linea!!.contains("=ret=")) token = linea!!.split("=ret=")[1]
-                        break
-                    }
+                if (!login(socket, usuario, clave)) {
+                    socket.close()
+                    return@withContext datos
                 }
 
-                // Recursos del sistema (CPU, RAM, Temp)
-                out.write("/system/resource/print\n\n")
+                // CPU, RAM, Temperatura
+                out.println("/system/resource/print")
+                out.println("")
                 out.flush()
+
+                var linea: String?
                 while (`in`.readLine().also { linea = it } != null) {
-                    if (linea!!.startsWith("!done")) break
-                    if (linea!!.startsWith("!re")) {
+                    if (linea == "!done") break
+                    if (linea.orEmpty().startsWith("!re")) {
                         Regex("cpu-load=(\\d+)").find(linea!!)?.let {
                             datos["cpu"] = "${it.groupValues[1]} %"
                         }
@@ -127,14 +141,17 @@ object MikrotikApi {
                     }
                 }
 
-                // Tráfico de interfaces (Subida/Bajada)
-                out.write("/interface/print\n=stats\n\n")
+                // Subida / Bajada
+                out.println("/interface/print")
+                out.println("=.proplist=name,rx-byte,tx-byte")
+                out.println("")
                 out.flush()
+
                 var totalRx = 0L
                 var totalTx = 0L
                 while (`in`.readLine().also { linea = it } != null) {
-                    if (linea!!.startsWith("!done")) break
-                    if (linea!!.startsWith("!re")) {
+                    if (linea == "!done") break
+                    if (linea.orEmpty().startsWith("!re")) {
                         Regex("rx-byte=(\\d+)").find(linea!!)?.let {
                             totalRx += it.groupValues[1].toLong()
                         }
@@ -143,11 +160,12 @@ object MikrotikApi {
                         }
                     }
                 }
+
                 datos["bajada"] = "${(totalRx / 125000) / 1000} Mbps"
                 datos["subida"] = "${(totalTx / 125000) / 1000} Mbps"
 
                 socket.close()
-            } catch (e: Exception) { /* Mantener valores por defecto */ }
+            } catch (e: Exception) { }
             datos
         }
 
@@ -440,24 +458,23 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var trabajoReloj: Job? = null
 
-    // 📊 DATOS EN TIEMPO REAL DEL MIKROTIK
     var datosSistema by remember { mutableStateOf(mapOf(
         "subida" to "— Mbps", "bajada" to "— Mbps",
         "cpu" to "— %", "ram" to "— %", "temp" to "— °C"
     )) }
 
     LaunchedEffect(routerSeleccionado) {
-        val config = configMikrotik.cargar(routerSeleccionado)
-        if (config.ip.isNotBlank()) {
-            while (true) {
+        while (true) {
+            val config = configMikrotik.cargar(routerSeleccionado)
+            if (config.ip.isNotBlank()) {
                 datosSistema = MikrotikApi.leerEstado(
                     ip = config.ip,
                     puerto = config.puerto.toIntOrNull() ?: 8728,
                     usuario = config.usuario,
                     clave = config.clave
                 )
-                delay(3000) // Actualiza cada 3 segundos
             }
+            delay(3000)
         }
     }
 

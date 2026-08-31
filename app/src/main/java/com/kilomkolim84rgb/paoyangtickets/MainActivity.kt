@@ -29,54 +29,41 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers
 import java.io.*
 import java.net.Socket
-import java.net.SocketTimeoutException // ✅ AGREGADO
+import java.net.SocketTimeoutException
 import java.net.ConnectException
-import javax.net.ssl.SSLContext
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.random.Random
 
-// ============= CONEXIÓN MIKROTIK — ROUTEROS 7.13 ✅ =============
+// ============= MIKROTIK API =============
 object MikrotikApi {
     private suspend fun login(socket: Socket, usuario: String, clave: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
                 val out = PrintWriter(socket.getOutputStream().writer(), true)
                 val `in` = BufferedReader(socket.getInputStream().reader())
-
-                // PASO 1: Pedir token — OBLIGATORIO en RouterOS 7
-                out.println("/login")
-                out.println("")
-                out.flush()
-
-                var linea: String?
-                var token = ""
+                out.println("/login"); out.println(""); out.flush()
+                var linea: String?; var token = ""
                 while (`in`.readLine().also { linea = it } != null) {
                     if (linea == "!done") break
-                    if (linea.orEmpty().startsWith("!re") && linea!!.contains("=ret=")) {
+                    if (linea.orEmpty().startsWith("!re") && linea!!.contains("=ret="))
                         token = linea!!.split("=ret=")[1]
-                    }
                 }
-
-                // PASO 2: Enviar credenciales
-                out.println("/login")
-                out.println("=name=$usuario")
-                out.println("=password=$clave")
+                out.println("/login"); out.println("=name=$usuario"); out.println("=password=$clave")
                 if (token.isNotEmpty()) out.println("=token=$token")
-                out.println("")
-                out.flush()
-
-                // PASO 3: Verificar
+                out.println(""); out.flush()
                 while (`in`.readLine().also { linea = it } != null) {
                     if (linea == "!done") return@withContext true
                     if (linea.orEmpty().startsWith("!trap")) return@withContext false
                 }
                 true
-            } catch (e: Exception) {
-                false
-            }
+            } catch { false }
         }
 
     suspend fun testConexion(ip: String, usuario: String, clave: String): String =
         withContext(Dispatchers.IO) {
-            if (ip.isBlank() || usuario.isBlank()) return@withContext "❌ Datos incompletos"
+            if (ip.isBlank() || usuario.isBlank() || clave.isBlank())
+                return@withContext "❌ Llena todos los campos"
             try {
                 val socket = Socket(ip, 8728)
                 socket.soTimeout = 5000
@@ -85,94 +72,28 @@ object MikrotikApi {
                     return@withContext "❌ Usuario o contraseña incorrectos"
                 }
                 socket.close()
-                "✅ Conexión exitosa — RouterOS 7.13"
-            } catch (e: SocketTimeoutException) {
-                "❌ Sin respuesta — revisa IP o firewall"
-            } catch (e: ConnectException) {
-                "❌ No se conecta — revisa red o WiFi"
-            } catch (e: Exception) {
-                "❌ Error: ${e.message}"
-            }
-        }
-
-    suspend fun leerEstado(ip: String, usuario: String, clave: String): Map<String, String> =
-        withContext(Dispatchers.IO) {
-            val datos = mutableMapOf(
-                "subida" to "— Mbps", "bajada" to "— Mbps",
-                "cpu" to "— %", "ram" to "— %", "temp" to "— °C"
-            )
-            try {
-                val socket = Socket(ip, 8728)
-                socket.soTimeout = 5000
-                val out = PrintWriter(socket.getOutputStream().writer(), true)
-                val `in` = BufferedReader(socket.getInputStream().reader())
-
-                if (!login(socket, usuario, clave)) {
-                    socket.close()
-                    return@withContext datos
-                }
-
-                // CPU, RAM, Temp
-                out.println("/system/resource/print")
-                out.println("")
-                out.flush()
-                var linea: String?
-                while (`in`.readLine().also { linea = it } != null) {
-                    if (linea == "!done") break
-                    if (linea.orEmpty().startsWith("!re")) {
-                        val l = linea!!
-                        if (l.contains("cpu-load")) {
-                            val valor = l.split("cpu-load=")[1].split(" ")[0]
-                            datos["cpu"] = "$valor %"
-                        }
-                        if (l.contains("total-memory") && l.contains("free-memory")) {
-                            val totalMem = Regex("total-memory=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 1
-                            val freeMem = Regex("free-memory=(\\d+)").find(l)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-                            datos["ram"] = "${100 - (freeMem * 100 / totalMem)} %"
-                        }
-                        if (l.contains("cpu-temperature")) {
-                            val valor = l.split("cpu-temperature=")[1].split(" ")[0]
-                            datos["temp"] = "$valor °C"
-                        }
-                    }
-                }
-
-                // Tráfico
-                out.println("/interface/print")
-                out.println("=.proplist=name,rx-byte,tx-byte")
-                out.println("")
-                out.flush()
-                var totalRx = 0L
-                var totalTx = 0L
-                while (`in`.readLine().also { linea = it } != null) {
-                    if (linea == "!done") break
-                    if (linea.orEmpty().startsWith("!re")) {
-                        val rx = Regex("rx-byte=(\\d+)").find(linea!!)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-                        val tx = Regex("tx-byte=(\\d+)").find(linea!!)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-                        totalRx += rx
-                        totalTx += tx
-                    }
-                }
-                datos["bajada"] = "${(totalRx / 125000) / 1000} Mbps"
-                datos["subida"] = "${(totalTx / 125000) / 1000} Mbps"
-                socket.close()
-            } catch (e: Exception) { }
-            datos
+                "✅ Conectado — RouterOS 7"
+            } catch (e: SocketTimeoutException) { "❌ Sin respuesta — revisa IP" }
+            catch (e: ConnectException) { "❌ No conecta — revisa red" }
+            catch (e: Exception) { "❌ Error: ${e.message}" }
         }
 }
 
+// ============= MAIN ACTIVITY =============
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appPrefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         configMikrotik = MikrotikConfig(this)
         setContent { PantallaPrincipal() }
     }
 }
 
 val db = FirebaseDatabase.getInstance().reference
+lateinit var appPrefs: SharedPreferences
 lateinit var configMikrotik: MikrotikConfig
 
-// ============= CONFIGURACIÓN =============
+// ============= CONFIG MIKROTIK — IP / USUARIO / CONTRASEÑA / DNS =============
 class MikrotikConfig(context: Context) {
     private val prefs = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
     data class Config(val ip: String = "", val usuario: String = "admin", val clave: String = "", val dns: String = "")
@@ -194,15 +115,23 @@ class MikrotikConfig(context: Context) {
     }
 }
 
-// ============= FIREBASE =============
-fun escucharFirebase() {
-    db.child("historial").addValueEventListener(object : ValueEventListener {
-        override fun onDataChange(snap: DataSnapshot) {}
-        override fun onCancelled(err: DatabaseError) {}
-    })
+// ============= FIREBASE — TICKETS =============
+fun generarTicket(monto: Double, horas: Int): String {
+    val codigo = "TK-${Date().time / 1000}-${Random.nextInt(1000,9999)}"
+    val formatoFecha = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+    val fecha = formatoFecha.format(Date())
+    val datos = mapOf(
+        "codigo" to codigo,
+        "monto" to monto,
+        "horas" to horas,
+        "fecha" to fecha,
+        "activo" to true
+    )
+    db.child("tickets").child(codigo).setValue(datos)
+    return codigo
 }
 
-// ============= VENTANA CONFIG — SIN PUERTO ✅ =============
+// ============= VENTANA CONFIG MIKROTIK =============
 @Composable
 fun VentanaConfig(routerId: Int, nombre: String, onCerrar: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -214,290 +143,131 @@ fun VentanaConfig(routerId: Int, nombre: String, onCerrar: () -> Unit) {
     var msg by remember { mutableStateOf<String?>(null) }
 
     Dialog(onDismissRequest = onCerrar) {
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "⚙️ CONFIGURACIÓN — $nombre",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1565C0)
-                )
-                Spacer(modifier = Modifier.height(24.dp))
+        Card(Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
+            Column(Modifier.padding(28.dp), Alignment.CenterHorizontally) {
+                Text("⚙️ $nombre", 22.sp, FontWeight.Bold, color = Color(0xFF1565C0))
+                Spacer(Modifier.height(24.dp))
 
-                OutlinedTextField(
-                    value = ip,
-                    onValueChange = { ip = it },
-                    label = { Text("IP Mikrotik") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("172.16.1.1") }
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = user,
-                    onValueChange = { user = it },
-                    label = { Text("Usuario") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = pass,
-                    onValueChange = { pass = it },
-                    label = { Text("Contraseña") },
-                    modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = dns,
-                    onValueChange = { dns = it },
-                    label = { Text("DNS") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(20.dp))
+                OutlinedTextField(ip, { ip = it }, label = { Text("IP Mikrotik") }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("172.16.1.1") })
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(user, { user = it }, label = { Text("Usuario") }, Modifier.fillMaxWidth(), singleLine = true)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(pass, { pass = it }, label = { Text("Contraseña") }, Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(dns, { dns = it }, label = { Text("DNS") }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("8.8.8.8") })
+                Spacer(Modifier.height(20.dp))
 
-                msg?.let {
-                    Text(
-                        text = it,
-                        fontSize = 14.sp,
-                        color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)
-                    )
+                msg?.let { Text(it, 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
+                Spacer(Modifier.height(12.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = {
+                        msg = "🔄 Conectando..."
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val res = MikrotikApi.testConexion(ip, user, pass)
+                            withContext(Dispatchers.Main) { msg = res }
+                        }
+                    }, Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
+
+                    Button(onClick = {
+                        if (ip.isBlank() || user.isBlank() || pass.isBlank()) {
+                            msg = "❌ Llena todos los campos"
+                            return@Button
+                        }
+                        configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, user, pass, dns))
+                        msg = "✅ Guardado"
+                        Toast.makeText(ctx, "Guardado", Toast.LENGTH_SHORT).show()
+                    }, Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            msg = "🔄 Conectando..."
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val res = MikrotikApi.testConexion(ip, user, pass)
-                                withContext(Dispatchers.Main) { msg = res }
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("🧪 PROBAR")
-                    }
-
-                    Button(
-                        onClick = {
-                            if (ip.isBlank()) {
-                                msg = "❌ IP obligatoria"
-                                return@Button
-                            }
-                            configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, user, pass, dns))
-                            msg = "✅ Guardado"
-                            Toast.makeText(ctx, "Guardado", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))
-                    ) {
-                        Text("💾 GUARDAR")
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = onCerrar,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
-                ) {
-                    Text("CERRAR")
-                }
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onCerrar, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) { Text("CERRAR") }
             }
         }
     }
 }
 
-// ============= TARJETA ROUTER =============
-@Composable
-fun TarjetaRouter(
-    nombre: String,
-    modelo: String,
-    id: Int,
-    sel: Boolean,
-    onClick: () -> Unit,
-    onCfg: () -> Unit
-) {
-    val cfg = remember { configMikrotik.cargar(id) }
-    Card(
-        onClick = onClick,
-        modifier = Modifier.width(160.dp).height(130.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(if (sel) Color(0xFFE3F2FD) else Color.White),
-        border = if (sel) BorderStroke(2.dp, Color(0xFF2563EB)) else null
-    ) {
-        Box {
-            IconButton(
-                onClick = onCfg,
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF6366F1))
-            }
-            Column(
-                modifier = Modifier.padding(top = 32.dp, start = 12.dp, end = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text(modelo, fontSize = 12.sp, color = Color.Gray)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text("IP: ${cfg.ip.ifBlank { "Sin config" }}", fontSize = 11.sp)
-            }
-        }
-    }
-}
-
-// ============= PANTALLA PRINCIPAL =============
+// ============= PANTALLA PRINCIPAL — TICKETS + MIKROTIK =============
 @Composable
 fun PantallaPrincipal() {
-    var routerSel by remember { mutableStateOf(1) }
-    var abrirCfg1 by remember { mutableStateOf(false) }
-    var abrirCfg2 by remember { mutableStateOf(false) }
-    var datos by remember {
-        mutableStateOf(
-            mapOf(
-                "subida" to "— Mbps",
-                "bajada" to "— Mbps",
-                "cpu" to "— %",
-                "ram" to "— %",
-                "temp" to "— °C"
-            )
-        )
-    }
+    var saldo by remember { mutableStateOf(appPrefs.getFloat("saldo", 0.0f).toDouble()) }
+    var codigoTicket by remember { mutableStateOf("") }
+    var mostrarConfig by remember { mutableStateOf(false) }
+    var montoSeleccionado by remember { mutableStateOf(0.0) }
+    var horasSeleccionadas by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) { escucharFirebase() }
-    LaunchedEffect(routerSel) {
-        while (true) {
-            val cfg = configMikrotik.cargar(routerSel)
-            if (cfg.ip.isNotBlank()) {
-                datos = MikrotikApi.leerEstado(cfg.ip, cfg.usuario, cfg.clave)
-            }
-            delay(3000)
+    LaunchedEffect(Unit) {
+        appPrefs.registerOnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "saldo") saldo = prefs.getFloat("saldo", 0.0f).toDouble()
         }
     }
 
-    if (abrirCfg1) {
-        VentanaConfig(1, "ROUTER #1") { abrirCfg1 = false }
-    }
-    if (abrirCfg2) {
-        VentanaConfig(2, "ROUTER #2") { abrirCfg2 = false }
-    }
+    if (mostrarConfig) VentanaConfig(1, "CONFIGURACIÓN MIKROTIK") { mostrarConfig = false }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        Modifier.fillMaxSize().background(Color(0xFFF5F5F5)).padding(20.dp),
+        Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(
-            text = "🎟️ PAOYAN TICKETS",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF2C3E50),
-            modifier = Modifier.padding(vertical = 16.dp)
-        )
+        Text("🎟️ PAOYAN TICKETS", 32.sp, FontWeight.Bold, color = Color(0xFF2C3E50))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            TarjetaRouter(
-                nombre = "📡 Router #1",
-                modelo = "RB750Gr3",
-                id = 1,
-                sel = routerSel == 1,
-                onClick = { routerSel = 1 },
-                onCfg = { abrirCfg1 = true }
-            )
-            TarjetaRouter(
-                nombre = "📡 Router #2",
-                modelo = "RB3011",
-                id = 2,
-                sel = routerSel == 2,
-                onClick = { routerSel = 2 },
-                onCfg = { abrirCfg2 = true }
-            )
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
+            Column(Modifier.padding(24.dp), Alignment.CenterHorizontally) {
+                Text("💰 SALDO ACTUAL", 16.sp, color = Color.Gray)
+                Text("S/ ${String.format("%.2f", saldo)}", 36.sp, FontWeight.Bold, color = Color(0xFF2E7D32))
+            }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-        val cfg = configMikrotik.cargar(routerSel)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(Color(0xFFE8F5E9))
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "📊 ESTADO — Router #$routerSel",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+        Text("🎫 GENERAR TICKET", 20.sp, FontWeight.Bold)
+
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(0.5 to 1, 1.0 to 2, 2.0 to 5, 5.0 to 12).forEach { (monto, horas) ->
+                Button(
+                    onClick = { montoSeleccionado = monto; horasSeleccionadas = horas },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        if (montoSeleccionado == monto) Color(0xFF22C55E) else Color(0xFF6366F1)
+                    )
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "IP", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = cfg.ip.ifBlank { "Sin config" }, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "Usuario", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = cfg.usuario, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "📤 Subida", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = datos["subida"]!!, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "📥 Bajada", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = datos["bajada"]!!, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "💻 CPU", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = datos["cpu"]!!, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "💾 RAM", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = datos["ram"]!!, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "🌡️ Temp", fontSize = 12.sp, color = Color.Gray)
-                        Text(text = datos["temp"]!!, fontWeight = FontWeight.Bold)
-                    }
+                    Text("S/ $monto → $horas horas", 18.sp, FontWeight.Bold)
                 }
             }
+        }
+
+        Button(
+            onClick = {
+                if (montoSeleccionado == 0.0) { Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Selecciona un monto", Toast.LENGTH_SHORT).show(); return@Button }
+                if (saldo < montoSeleccionado) { Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Saldo insuficiente", Toast.LENGTH_SHORT).show(); return@Button }
+                saldo -= montoSeleccionado
+                appPrefs.edit().putFloat("saldo", saldo.toFloat()).apply()
+                codigoTicket = generarTicket(montoSeleccionado, horasSeleccionadas)
+            },
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(Color(0xFFFF6B00))
+        ) {
+            Text("✅ GENERAR TICKET", 20.sp, FontWeight.Bold)
+        }
+
+        if (codigoTicket.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(Color(0xFFE3F2FD))) {
+                Column(Modifier.padding(24.dp), Alignment.CenterHorizontally) {
+                    Text("✅ TICKET GENERADO", 18.sp, FontWeight.Bold, color = Color(0xFF1565C0))
+                    Text(codigoTicket, 22.sp, FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                    Text("Valido por $horasSeleccionadas horas", 14.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+
+        Button(
+            onClick = { mostrarConfig = true },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
+        ) {
+            Icon(Icons.Default.Settings, null, Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("⚙️ CONFIGURACIÓN MIKROTIK", 16.sp, FontWeight.Bold)
         }
     }
 }

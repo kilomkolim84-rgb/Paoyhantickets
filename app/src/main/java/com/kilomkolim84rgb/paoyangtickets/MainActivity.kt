@@ -30,8 +30,8 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.zxing.BarcodeFormat
-import com.zxing.qrcode.QRCodeWriter
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -41,8 +41,6 @@ import java.io.*
 import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.*
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 
 // ============= CONEXIÓN REAL AL MIKROTIK =============
 object MikrotikConnector {

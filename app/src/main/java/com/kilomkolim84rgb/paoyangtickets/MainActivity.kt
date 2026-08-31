@@ -57,7 +57,7 @@ object MikrotikApi {
                     if (linea.orEmpty().startsWith("!trap")) return@withContext false
                 }
                 true
-            } catch { false }
+            } catch (e: Exception) { false }
         }
 
     suspend fun testConexion(ip: String, usuario: String, clave: String): String =
@@ -236,8 +236,14 @@ fun PantallaPrincipal() {
 
         Button(
             onClick = {
-                if (montoSeleccionado == 0.0) { Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Selecciona un monto", Toast.LENGTH_SHORT).show(); return@Button }
-                if (saldo < montoSeleccionado) { Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Saldo insuficiente", Toast.LENGTH_SHORT).show(); return@Button }
+                if (montoSeleccionado == 0.0) { 
+                    Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Selecciona un monto", Toast.LENGTH_SHORT).show()
+                    return@Button 
+                }
+                if (saldo < montoSeleccionado) { 
+                    Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Saldo insuficiente", Toast.LENGTH_SHORT).show()
+                    return@Button 
+                }
                 saldo -= montoSeleccionado
                 appPrefs.edit().putFloat("saldo", saldo.toFloat()).apply()
                 codigoTicket = generarTicket(montoSeleccionado, horasSeleccionadas)

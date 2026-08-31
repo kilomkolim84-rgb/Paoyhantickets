@@ -42,9 +42,8 @@ android {
     }
 }
 
-// ✅ CORREGIDO: AGREGADO { DESPUÉS DE dependencies
 dependencies {
-    // ZXING para códigos QR — una sola versión, sin duplicar
+    // ZXING para códigos QR
     implementation "com.google.zxing:core:3.5.2"
     implementation "com.journeyapps:zxing-android-embedded:4.3.0"
     

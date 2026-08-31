@@ -30,14 +30,54 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
+import com.zxing.BarcodeFormat
+import com.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.*
+import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.*
+
+// ============= CONEXIÓN REAL AL MIKROTIK =============
+object MikrotikConnector {
+    suspend fun test(ip: String, puerto: Int, usuario: String, clave: String): String =
+        withContext(Dispatchers.IO) {
+            if (ip.isBlank() || puerto <= 0 || usuario.isBlank())
+                return@withContext "❌ Datos incompletos"
+
+            try {
+                Socket(ip, puerto).use { socket ->
+                    socket.soTimeout = 5000
+                    val out = OutputStreamWriter(socket.getOutputStream())
+                    val `in` = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+                    // Login al API de MikroTik
+                    out.write("/login\n=name=$usuario\n=password=$clave\n\n")
+                    out.flush()
+
+                    var linea: String?
+                    while (`in`.readLine().also { linea = it } != null) {
+                        if (linea == "!done") break
+                        if (linea.orEmpty().startsWith("!trap")) {
+                            return@withContext "❌ Usuario o contraseña incorrectos"
+                        }
+                    }
+
+                    "✅ Conexión exitosa — MikroTik conectado"
+                }
+            } catch (e: java.net.SocketTimeoutException) {
+                "❌ Sin respuesta — revisa puerto o firewall"
+            } catch (e: java.net.ConnectException) {
+                "❌ No se conecta — revisa IP, WiFi o firewall"
+            } catch (e: Exception) {
+                "❌ Error: ${e.message}"
+            }
+        }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -264,16 +304,35 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { mensajeEstado = if (ip.isNotBlank()) "✅ Conexión válida" else "❌ Ingrese la IP" }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
+                Button(onClick = {
+                    mensajeEstado = "🔄 Conectando..."
+                    kotlinx.coroutines.GlobalScope.launch {
+                        val resultado = MikrotikConnector.test(
+                            ip = ip,
+                            puerto = puerto.toIntOrNull() ?: 8728,
+                            usuario = usuario,
+                            clave = clave
+                        )
+                        withContext(Dispatchers.Main) {
+                            mensajeEstado = resultado
+                        }
+                    }
+                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                    Text("🧪 PROBAR")
+                }
                 Button(onClick = {
                     if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
                     configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, puerto, usuario, clave, dns))
                     mensajeEstado = "✅ Guardado"
                     Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
-                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
+                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) {
+                    Text("💾 GUARDAR")
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) { Text("CERRAR") }
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) {
+                Text("CERRAR")
+            }
         }
     }
 }
@@ -473,7 +532,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 }
                             }
 
-                            // Ventana para ver QR
                             if (verQR) Dialog(onDismissRequest = { verQR = false }) {
                                 Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
                                     Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -491,7 +549,6 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                 }
                             }
 
-                            // Ventana para ver la foto ampliada
                             if (verFoto && t.fotoBase64.isNotBlank()) Dialog(onDismissRequest = { verFoto = false }) {
                                 Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
                                     Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {

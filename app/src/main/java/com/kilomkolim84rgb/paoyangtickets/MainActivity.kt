@@ -41,42 +41,124 @@ import java.io.*
 import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.*
+import javax.net.ssl.SSLContext
 
-// ============= CONEXIÓN REAL AL MIKROTIK =============
-object MikrotikConnector {
-    suspend fun test(ip: String, puerto: Int, usuario: String, clave: String): String =
+// ============= CONEXIÓN Y LECTURA DE DATOS DEL MIKROTIK =============
+object MikrotikApi {
+    suspend fun testConexion(ip: String, puerto: Int, usuario: String, clave: String): String =
         withContext(Dispatchers.IO) {
             if (ip.isBlank() || puerto <= 0 || usuario.isBlank())
                 return@withContext "❌ Datos incompletos"
 
             try {
-                Socket(ip, puerto).use { socket ->
-                    socket.soTimeout = 5000
-                    val out = OutputStreamWriter(socket.getOutputStream())
-                    val `in` = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val socket = crearSocket(ip, puerto)
+                socket.soTimeout = 5000
+                val out = OutputStreamWriter(socket.getOutputStream())
+                val `in` = BufferedReader(InputStreamReader(socket.getInputStream()))
 
-                    // Login al API de MikroTik
-                    out.write("/login\n=name=$usuario\n=password=$clave\n\n")
-                    out.flush()
+                out.write("/login\n=name=$usuario\n=password=$clave\n\n")
+                out.flush()
 
-                    var linea: String?
-                    while (`in`.readLine().also { linea = it } != null) {
-                        if (linea == "!done") break
-                        if (linea.orEmpty().startsWith("!trap")) {
-                            return@withContext "❌ Usuario o contraseña incorrectos"
-                        }
+                var linea: String?
+                while (`in`.readLine().also { linea = it } != null) {
+                    if (linea == "!done") break
+                    if (linea.orEmpty().startsWith("!trap")) {
+                        socket.close()
+                        return@withContext "❌ Usuario o contraseña incorrectos"
                     }
-
-                    "✅ Conexión exitosa — MikroTik conectado"
                 }
-            } catch (e: java.net.SocketTimeoutException) {
-                "❌ Sin respuesta — revisa puerto o firewall"
-            } catch (e: java.net.ConnectException) {
-                "❌ No se conecta — revisa IP, WiFi o firewall"
+                socket.close()
+                "✅ Conectado — ${if (puerto == 8729) "API-SSL Seguro" else "API Normal"}"
             } catch (e: Exception) {
-                "❌ Error: ${e.message}"
+                when (e) {
+                    is java.net.SocketTimeoutException -> "❌ Sin respuesta — revisa puerto o firewall"
+                    is java.net.ConnectException -> "❌ No se conecta — revisa IP, WiFi o firewall"
+                    else -> "❌ Error: ${e.message}"
+                }
             }
         }
+
+    suspend fun leerEstado(ip: String, puerto: Int, usuario: String, clave: String): Map<String, String> =
+        withContext(Dispatchers.IO) {
+            val datos = mutableMapOf(
+                "subida" to "— Mbps",
+                "bajada" to "— Mbps",
+                "cpu" to "— %",
+                "ram" to "— %",
+                "temp" to "— °C"
+            )
+
+            try {
+                val socket = crearSocket(ip, puerto)
+                socket.soTimeout = 5000
+                val out = OutputStreamWriter(socket.getOutputStream())
+                val `in` = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+                // Login
+                out.write("/login\n=name=$usuario\n=password=$clave\n\n")
+                out.flush()
+                var linea: String?
+                var token = ""
+                while (`in`.readLine().also { linea = it } != null) {
+                    if (linea!!.startsWith("!done")) {
+                        if (linea!!.contains("=ret=")) token = linea!!.split("=ret=")[1]
+                        break
+                    }
+                }
+
+                // Recursos del sistema (CPU, RAM, Temp)
+                out.write("/system/resource/print\n\n")
+                out.flush()
+                while (`in`.readLine().also { linea = it } != null) {
+                    if (linea!!.startsWith("!done")) break
+                    if (linea!!.startsWith("!re")) {
+                        Regex("cpu-load=(\\d+)").find(linea!!)?.let {
+                            datos["cpu"] = "${it.groupValues[1]} %"
+                        }
+                        Regex("total-memory=(\\d+)").find(linea!!)?.let { total ->
+                            Regex("free-memory=(\\d+)").find(linea!!)?.let { free ->
+                                val uso = ((total.groupValues[1].toLong() - free.groupValues[1].toLong()) * 100) / total.groupValues[1].toLong()
+                                datos["ram"] = "$uso %"
+                            }
+                        }
+                        Regex("temperature=(\\d+)").find(linea!!)?.let {
+                            datos["temp"] = "${it.groupValues[1]} °C"
+                        }
+                    }
+                }
+
+                // Tráfico de interfaces (Subida/Bajada)
+                out.write("/interface/print\n=stats\n\n")
+                out.flush()
+                var totalRx = 0L
+                var totalTx = 0L
+                while (`in`.readLine().also { linea = it } != null) {
+                    if (linea!!.startsWith("!done")) break
+                    if (linea!!.startsWith("!re")) {
+                        Regex("rx-byte=(\\d+)").find(linea!!)?.let {
+                            totalRx += it.groupValues[1].toLong()
+                        }
+                        Regex("tx-byte=(\\d+)").find(linea!!)?.let {
+                            totalTx += it.groupValues[1].toLong()
+                        }
+                    }
+                }
+                datos["bajada"] = "${(totalRx / 125000) / 1000} Mbps"
+                datos["subida"] = "${(totalTx / 125000) / 1000} Mbps"
+
+                socket.close()
+            } catch (e: Exception) { /* Mantener valores por defecto */ }
+            datos
+        }
+
+    private fun crearSocket(ip: String, puerto: Int): Socket {
+        return if (puerto == 8729) {
+            val sslContext = SSLContext.getDefault()
+            sslContext.socketFactory.createSocket(ip, puerto)
+        } else {
+            Socket(ip, puerto)
+        }
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -92,7 +174,7 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
-// ============= GESTOR DE CONFIGURACIÓN MIKROTIK =============
+// ============= GESTOR DE CONFIGURACIÓN =============
 class MikrotikConfig(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
 
@@ -178,21 +260,16 @@ class TicketManager(context: Context) {
 lateinit var gestorTickets: TicketManager
 val listaTickets = mutableStateListOf<Ticket>()
 
-// Función auxiliar para convertir foto de texto a imagen
 fun base64ABitmap(base64: String): Bitmap? {
     return try {
         val bytes = Base64.decode(base64, Base64.DEFAULT)
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-    } catch (e: Exception) {
-        null
-    }
+    } catch (e: Exception) { null }
 }
 
-// ============= ESCUCHA FIREBASE INTACTA =============
+// ============= ESCUCHA FIREBASE =============
 fun escucharHistorialFirebase() {
     listaTickets.addAll(gestorTickets.cargar())
-    println("✅ Cargados ${listaTickets.size} tickets guardados")
-
     val ref = db.child("historial")
     ref.addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
@@ -209,7 +286,6 @@ fun escucharHistorialFirebase() {
                 if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
                 if (monto <= 0.0 && tiempoMinutos <= 0) continue
 
-                // Guarda la foto si llega desde la ESP32
                 if (fotoBase64.isNotBlank()) {
                     val idx = listaTickets.indexOfFirst { it.codigo == codigo }
                     if (idx >= 0 && listaTickets[idx].fotoBase64.isBlank()) {
@@ -218,7 +294,6 @@ fun escucharHistorialFirebase() {
                     }
                 }
 
-                // DETECTA SI EL PORTAL LO USÓ → PASA A ACTIVO
                 if (leidoPorPortal) {
                     val idx = listaTickets.indexOfFirst { it.codigo == codigo }
                     if (idx >= 0 && listaTickets[idx].estado == "CREADO") {
@@ -227,18 +302,15 @@ fun escucharHistorialFirebase() {
                     }
                 }
 
-                // MARCA LEÍDO SOLO SI YA LO HIZO EL MONEDERO
                 if (!leidoPorTicket && leidoPorMonedero) {
                     ticketNodo.ref.child("leido_por_ticket").setValue(true)
                 }
 
-                // BORRA AUTOMÁTICO SOLO CUANDO LOS 3 SON TRUE
                 if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
                     ticketNodo.ref.removeValue()
                     continue
                 }
 
-                // AGREGA NUEVO TICKET SI NO EXISTE
                 if (listaTickets.none { it.codigo == codigo }) {
                     val minutos = if (tiempoMinutos > 0) tiempoMinutos else (monto * 100).toInt()
                     val horas = minutos / 60
@@ -259,7 +331,6 @@ fun escucharHistorialFirebase() {
                 }
             }
         }
-
         override fun onCancelled(error: DatabaseError) {}
     })
 }
@@ -307,15 +378,13 @@ fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> U
                 Button(onClick = {
                     mensajeEstado = "🔄 Conectando..."
                     kotlinx.coroutines.GlobalScope.launch {
-                        val resultado = MikrotikConnector.test(
+                        val resultado = MikrotikApi.testConexion(
                             ip = ip,
                             puerto = puerto.toIntOrNull() ?: 8728,
                             usuario = usuario,
                             clave = clave
                         )
-                        withContext(Dispatchers.Main) {
-                            mensajeEstado = resultado
-                        }
+                        withContext(Dispatchers.Main) { mensajeEstado = resultado }
                     }
                 }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
                     Text("🧪 PROBAR")
@@ -371,6 +440,27 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var trabajoReloj: Job? = null
 
+    // 📊 DATOS EN TIEMPO REAL DEL MIKROTIK
+    var datosSistema by remember { mutableStateOf(mapOf(
+        "subida" to "— Mbps", "bajada" to "— Mbps",
+        "cpu" to "— %", "ram" to "— %", "temp" to "— °C"
+    )) }
+
+    LaunchedEffect(routerSeleccionado) {
+        val config = configMikrotik.cargar(routerSeleccionado)
+        if (config.ip.isNotBlank()) {
+            while (true) {
+                datosSistema = MikrotikApi.leerEstado(
+                    ip = config.ip,
+                    puerto = config.puerto.toIntOrNull() ?: 8728,
+                    usuario = config.usuario,
+                    clave = config.clave
+                )
+                delay(3000) // Actualiza cada 3 segundos
+            }
+        }
+    }
+
     LaunchedEffect(Unit) { escucharHistorialFirebase() }
     val cCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
     val cActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
@@ -381,7 +471,6 @@ fun PantallaPrincipal() {
             while (true) {
                 delay(1000)
                 var huboCambios = false
-
                 listaTickets.forEachIndexed { indice, ticket ->
                     if (ticket.estado == "ACTIVO") {
                         val nuevoTiempo = ticket.tiempoRestanteSeg - 1
@@ -393,10 +482,7 @@ fun PantallaPrincipal() {
                         huboCambios = true
                     }
                 }
-
-                if (huboCambios) {
-                    gestorTickets.guardar(listaTickets)
-                }
+                if (huboCambios) gestorTickets.guardar(listaTickets)
             }
         }
     }
@@ -432,14 +518,14 @@ fun PantallaPrincipal() {
                 Text("📊 VELOCIDAD Y ESTADO", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1976D2))
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Column { Text("📤 Subida", fontSize = 12.sp, color = Color.Gray); Text("— Mbps", fontWeight = FontWeight.Bold) }
-                    Column { Text("📥 Bajada", fontSize = 12.sp, color = Color.Gray); Text("— Mbps", fontWeight = FontWeight.Bold) }
+                    Column { Text("📤 Subida", fontSize = 12.sp, color = Color.Gray); Text(datosSistema["subida"]!!, fontWeight = FontWeight.Bold) }
+                    Column { Text("📥 Bajada", fontSize = 12.sp, color = Color.Gray); Text(datosSistema["bajada"]!!, fontWeight = FontWeight.Bold) }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Column { Text("💻 CPU", fontSize = 12.sp, color = Color.Gray); Text("— %", fontWeight = FontWeight.Bold) }
-                    Column { Text("💾 RAM", fontSize = 12.sp, color = Color.Gray); Text("— %", fontWeight = FontWeight.Bold) }
-                    Column { Text("🌡️ Temp", fontSize = 12.sp, color = Color.Gray); Text("— °C", fontWeight = FontWeight.Bold) }
+                    Column { Text("💻 CPU", fontSize = 12.sp, color = Color.Gray); Text(datosSistema["cpu"]!!, fontWeight = FontWeight.Bold) }
+                    Column { Text("💾 RAM", fontSize = 12.sp, color = Color.Gray); Text(datosSistema["ram"]!!, fontWeight = FontWeight.Bold) }
+                    Column { Text("🌡️ Temp", fontSize = 12.sp, color = Color.Gray); Text(datosSistema["temp"]!!, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -490,7 +576,7 @@ data class Ticket(
     val fotoBase64: String = ""
 )
 
-// ============= VENTANAS =============
+// ============= VENTANAS DE TICKETS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }
@@ -556,21 +642,13 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
                                         Spacer(modifier = Modifier.height(16.dp))
                                         val fotoBitmap = remember { base64ABitmap(t.fotoBase64) }
                                         if (fotoBitmap != null) {
-                                            Image(
-                                                bitmap = fotoBitmap.asImageBitmap(),
-                                                contentDescription = "Foto del usuario",
-                                                modifier = Modifier
-                                                    .size(300.dp)
-                                                    .border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp))
-                                            )
+                                            Image(bitmap = fotoBitmap.asImageBitmap(), contentDescription = "Foto del usuario",
+                                                modifier = Modifier.size(300.dp).border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp)))
                                         } else {
                                             Text("No se pudo cargar la imagen", color = Color.Red, fontSize = 15.sp)
                                         }
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        Text(
-                                            text = "Código: ${t.codigo}\nMonto: S/ %.2f\nTiempo: ${t.tiempoStr}\nFecha y hora: ${t.fecha}".format(t.monto),
-                                            fontSize = 15.sp
-                                        )
+                                        Text("Código: ${t.codigo}\nMonto: S/ %.2f\nTiempo: ${t.tiempoStr}\nFecha y hora: ${t.fecha}".format(t.monto), fontSize = 15.sp)
                                         Spacer(modifier = Modifier.height(16.dp))
                                         Button(onClick = { verFoto = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
                                     }

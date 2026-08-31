@@ -2,8 +2,12 @@ package com.kilomkolim84rgb.paoyangtickets
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import android.widget.Toast
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -16,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -25,255 +30,635 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import kotlinx.coroutines.*
-import kotlinx.coroutines.Dispatchers
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.*
 import java.net.Socket
-import java.net.SocketTimeoutException
-import java.net.ConnectException
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.random.Random
 
-// ============= MIKROTIK API =============
-object MikrotikApi {
-    private suspend fun login(socket: Socket, usuario: String, clave: String): Boolean =
-        withContext(Dispatchers.IO) {
-            try {
-                val out = PrintWriter(socket.getOutputStream().writer(), true)
-                val `in` = BufferedReader(socket.getInputStream().reader())
-                out.println("/login"); out.println(""); out.flush()
-                var linea: String?; var token = ""
-                while (`in`.readLine().also { linea = it } != null) {
-                    if (linea == "!done") break
-                    if (linea.orEmpty().startsWith("!re") && linea!!.contains("=ret="))
-                        token = linea!!.split("=ret=")[1]
-                }
-                out.println("/login"); out.println("=name=$usuario"); out.println("=password=$clave")
-                if (token.isNotEmpty()) out.println("=token=$token")
-                out.println(""); out.flush()
-                while (`in`.readLine().also { linea = it } != null) {
-                    if (linea == "!done") return@withContext true
-                    if (linea.orEmpty().startsWith("!trap")) return@withContext false
-                }
-                true
-            } catch (e: Exception) { false }
-        }
-
-    suspend fun testConexion(ip: String, usuario: String, clave: String): String =
-        withContext(Dispatchers.IO) {
-            if (ip.isBlank() || usuario.isBlank() || clave.isBlank())
-                return@withContext "❌ Llena todos los campos"
-            try {
-                val socket = Socket(ip, 8728)
-                socket.soTimeout = 5000
-                if (!login(socket, usuario, clave)) {
-                    socket.close()
-                    return@withContext "❌ Usuario o contraseña incorrectos"
-                }
-                socket.close()
-                "✅ Conectado — RouterOS 7"
-            } catch (e: SocketTimeoutException) { "❌ Sin respuesta — revisa IP" }
-            catch (e: ConnectException) { "❌ No conecta — revisa red" }
-            catch (e: Exception) { "❌ Error: ${e.message}" }
-        }
-}
-
-// ============= MAIN ACTIVITY =============
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        appPrefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         configMikrotik = MikrotikConfig(this)
-        setContent { PantallaPrincipal() }
+        gestorTickets = TicketManager(this)
+        setContent {
+            PantallaPrincipal()
+        }
     }
 }
 
 val db = FirebaseDatabase.getInstance().reference
-lateinit var appPrefs: SharedPreferences
-lateinit var configMikrotik: MikrotikConfig
 
-// ============= CONFIG MIKROTIK — IP / USUARIO / CONTRASEÑA / DNS =============
+// ============= GESTOR DE CONFIGURACIÓN MIKROTIK =============
 class MikrotikConfig(context: Context) {
-    private val prefs = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
-    data class Config(val ip: String = "", val usuario: String = "admin", val clave: String = "", val dns: String = "")
+    private val prefs: SharedPreferences = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
 
-    fun cargar(id: Int): Config = Config(
-        ip = prefs.getString("r${id}_ip", "") ?: "",
-        usuario = prefs.getString("r${id}_usuario", "admin") ?: "admin",
-        clave = prefs.getString("r${id}_clave", "") ?: "",
-        dns = prefs.getString("r${id}_dns", "") ?: ""
+    data class Config(
+        val ip: String = "",
+        val puerto: String = "8728",  // FIJO, NO SE VE EN PANTALLA
+        val usuario: String = "admin",
+        val clave: String = "",
+        val dns: String = ""
     )
 
-    fun guardar(id: Int, cfg: Config) {
+    fun cargar(id: Int): Config {
+        return Config(
+            ip = prefs.getString("r${id}_ip", "") ?: "",
+            puerto = "8728",  // SIEMPRE 8728, FIJO
+            usuario = prefs.getString("r${id}_usuario", "admin") ?: "admin",
+            clave = prefs.getString("r${id}_clave", "") ?: "",
+            dns = prefs.getString("r${id}_dns", "") ?: ""
+        )
+    }
+
+    fun guardar(id: Int, config: Config) {
         prefs.edit()
-            .putString("r${id}_ip", cfg.ip)
-            .putString("r${id}_usuario", cfg.usuario)
-            .putString("r${id}_clave", cfg.clave)
-            .putString("r${id}_dns", cfg.dns)
+            .putString("r${id}_ip", config.ip)
+            .putString("r${id}_usuario", config.usuario)
+            .putString("r${id}_clave", config.clave)
+            .putString("r${id}_dns", config.dns)
             .apply()
     }
 }
 
-// ============= FIREBASE — TICKETS =============
-fun generarTicket(monto: Double, horas: Int): String {
-    val codigo = "TK-${Date().time / 1000}-${Random.nextInt(1000,9999)}"
-    val formatoFecha = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
-    val fecha = formatoFecha.format(Date())
-    val datos = mapOf(
-        "codigo" to codigo,
-        "monto" to monto,
-        "horas" to horas,
-        "fecha" to fecha,
-        "activo" to true
-    )
-    db.child("tickets").child(codigo).setValue(datos)
-    return codigo
+lateinit var configMikrotik: MikrotikConfig
+
+// ============= DATOS DE CLIENTES LAN =============
+data class ClienteLAN(
+    val ip: String,
+    val mac: String,
+    val velocidadSubida: String,
+    val velocidadBajada: String
+)
+
+// ============= GESTOR DE TICKETS =============
+class TicketManager(context: Context) {
+    private val archivo = File(context.filesDir, "tickets_guardados.txt")
+
+    fun cargar(): MutableList<Ticket> {
+        val lista = mutableListOf<Ticket>()
+        try {
+            if (!archivo.exists()) return lista
+            val lector = BufferedReader(InputStreamReader(FileInputStream(archivo)))
+            var linea: String?
+            while (lector.readLine().also { linea = it } != null) {
+                val datos = linea!!.split("|")
+                if (datos.size >= 11) {
+                    lista.add(
+                        Ticket(
+                            codigo = datos[0],
+                            monto = datos[1].toFloatOrNull() ?: 0f,
+                            minutos = datos[2].toIntOrNull() ?: 0,
+                            tiempoStr = datos[3],
+                            fecha = datos[4],
+                            estado = datos[5],
+                            tiempoRestanteSeg = datos[6].toIntOrNull() ?: 0,
+                            velocidadSubida = datos[7],
+                            velocidadBajada = datos[8],
+                            ipUsuario = datos[9],
+                            macUsuario = datos.getOrNull(10) ?: "",
+                            fotoBase64 = datos.getOrNull(11) ?: ""
+                        )
+                    )
+                }
+            }
+            lector.close()
+        } catch (e: Exception) { e.printStackTrace() }
+        return lista
+    }
+
+    fun guardar(tickets: List<Ticket>) {
+        try {
+            val escritor = BufferedWriter(OutputStreamWriter(FileOutputStream(archivo)))
+            tickets.forEach { t ->
+                escritor.write("${t.codigo}|${t.monto}|${t.minutos}|${t.tiempoStr}|${t.fecha}|${t.estado}|${t.tiempoRestanteSeg}|${t.velocidadSubida}|${t.velocidadBajada}|${t.ipUsuario}|${t.macUsuario}|${t.fotoBase64}")
+                escritor.newLine()
+            }
+            escritor.close()
+        } catch (e: Exception) { e.printStackTrace() }
+    }
 }
 
-// ============= VENTANA CONFIG MIKROTIK =============
-@Composable
-fun VentanaConfig(routerId: Int, nombre: String, onCerrar: () -> Unit) {
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val cfg = remember { configMikrotik.cargar(routerId) }
-    var ip by remember { mutableStateOf(cfg.ip) }
-    var user by remember { mutableStateOf(cfg.usuario) }
-    var pass by remember { mutableStateOf(cfg.clave) }
-    var dns by remember { mutableStateOf(cfg.dns) }
-    var msg by remember { mutableStateOf<String?>(null) }
+lateinit var gestorTickets: TicketManager
+val listaTickets = mutableStateListOf<Ticket>()
+val listaClientesLAN = mutableStateListOf<ClienteLAN>()
 
-    Dialog(onDismissRequest = onCerrar) {
-        Card(Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(28.dp), Alignment.CenterHorizontally) {
-                Text("⚙️ $nombre", 22.sp, FontWeight.Bold, color = Color(0xFF1565C0))
-                Spacer(Modifier.height(24.dp))
+// Función auxiliar para convertir foto de texto a imagen
+fun base64ABitmap(base64: String): Bitmap? {
+    return try {
+        val bytes = Base64.decode(base64, Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    } catch (e: Exception) {
+        null
+    }
+}
 
-                OutlinedTextField(ip, { ip = it }, label = { Text("IP Mikrotik") }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("172.16.1.1") })
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(user, { user = it }, label = { Text("Usuario") }, Modifier.fillMaxWidth(), singleLine = true)
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(pass, { pass = it }, label = { Text("Contraseña") }, Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true)
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(dns, { dns = it }, label = { Text("DNS") }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("8.8.8.8") })
-                Spacer(Modifier.height(20.dp))
+// ============= ESCUCHA FIREBASE INTACTA =============
+fun escucharHistorialFirebase() {
+    listaTickets.addAll(gestorTickets.cargar())
+    println("✅ Cargados ${listaTickets.size} tickets guardados")
 
-                msg?.let { Text(it, 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
-                Spacer(Modifier.height(12.dp))
+    val ref = db.child("historial")
+    ref.addValueEventListener(object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            for (ticketNodo in snapshot.children) {
+                val codigo = ticketNodo.child("codigo").getValue(String::class.java) ?: ""
+                val monto = ticketNodo.child("monto").getValue(Double::class.java) ?: 0.0
+                val tiempoMinutos = ticketNodo.child("tiempo_minutos").getValue(Int::class.java) ?: 0
+                val fecha = ticketNodo.child("fecha").getValue(String::class.java) ?: ""
+                val fotoBase64 = ticketNodo.child("fotoBase64").getValue(String::class.java) ?: ""
+                val leidoPorTicket = ticketNodo.child("leido_por_ticket").getValue(Boolean::class.java) ?: false
+                val leidoPorMonedero = ticketNodo.child("leido_por_monedero").getValue(Boolean::class.java) ?: false
+                val leidoPorPortal = ticketNodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = {
-                        msg = "🔄 Conectando..."
-                        CoroutineScope(Dispatchers.IO).launch {
-                            val res = MikrotikApi.testConexion(ip, user, pass)
-                            withContext(Dispatchers.Main) { msg = res }
-                        }
-                    }, Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
+                if (monto <= 0.0 && tiempoMinutos <= 0) continue
 
-                    Button(onClick = {
-                        if (ip.isBlank() || user.isBlank() || pass.isBlank()) {
-                            msg = "❌ Llena todos los campos"
-                            return@Button
-                        }
-                        configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, user, pass, dns))
-                        msg = "✅ Guardado"
-                        Toast.makeText(ctx, "Guardado", Toast.LENGTH_SHORT).show()
-                    }, Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
+                if (fotoBase64.isNotBlank()) {
+                    val idx = listaTickets.indexOfFirst { it.codigo == codigo }
+                    if (idx >= 0 && listaTickets[idx].fotoBase64.isBlank()) {
+                        listaTickets[idx] = listaTickets[idx].copy(fotoBase64 = fotoBase64)
+                        gestorTickets.guardar(listaTickets)
+                    }
                 }
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onCerrar, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) { Text("CERRAR") }
+
+                if (leidoPorPortal) {
+                    val idx = listaTickets.indexOfFirst { it.codigo == codigo }
+                    if (idx >= 0 && listaTickets[idx].estado == "CREADO") {
+                        listaTickets[idx] = listaTickets[idx].copy(estado = "ACTIVO")
+                        gestorTickets.guardar(listaTickets)
+                    }
+                }
+
+                if (!leidoPorTicket && leidoPorMonedero) {
+                    ticketNodo.ref.child("leido_por_ticket").setValue(true)
+                }
+
+                if (leidoPorTicket && leidoPorMonedero && leidoPorPortal) {
+                    ticketNodo.ref.removeValue()
+                    continue
+                }
+
+                if (listaTickets.none { it.codigo == codigo }) {
+                    val minutos = if (tiempoMinutos > 0) tiempoMinutos else (monto * 100).toInt()
+                    val horas = minutos / 60
+                    val mins = minutos % 60
+                    val tiempoStr = if (horas > 0) "${horas}h ${mins}m" else "${mins}m"
+
+                    listaTickets.add(0, Ticket(
+                        codigo = codigo,
+                        monto = monto.toFloat(),
+                        minutos = minutos,
+                        tiempoStr = tiempoStr,
+                        fecha = fecha,
+                        estado = "CREADO",
+                        tiempoRestanteSeg = minutos * 60,
+                        fotoBase64 = fotoBase64
+                    ))
+                    gestorTickets.guardar(listaTickets)
+                }
+            }
+        }
+
+        override fun onCancelled(error: DatabaseError) {}
+    })
+}
+
+fun formatearTiempo(segundos: Int): String {
+    val h = segundos / 3600
+    val m = (segundos % 3600) / 60
+    val s = segundos % 60
+    return String.format("%02d:%02d:%02d", h, m, s)
+}
+
+// ============= VENTANA CONFIGURACIÓN — SIN PUERTO =============
+@Composable
+fun VentanaConfigMikrotik(routerId: Int, nombreRouter: String, onCerrar: () -> Unit) {
+    val contexto = androidx.compose.ui.platform.LocalContext.current
+    val config = remember { configMikrotik.cargar(routerId) }
+
+    var ip by remember { mutableStateOf(config.ip) }
+    var usuario by remember { mutableStateOf(config.usuario) }
+    var clave by remember { mutableStateOf(config.clave) }
+    var dns by remember { mutableStateOf(config.dns) }
+    var mensajeEstado by remember { mutableStateOf<String?>(null) }
+
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
+        Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("⚙️ CONFIGURACIÓN — $nombreRouter", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            OutlinedTextField(ip, { ip = it }, label = { Text("IP Mikrotik") }, modifier = Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("192.168.88.1") })
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(usuario, { usuario = it }, label = { Text("Usuario") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(clave, { clave = it }, label = { Text("Contraseña") }, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(dns, { dns = it }, label = { Text("DNS") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Spacer(modifier = Modifier.height(20.dp))
+
+            mensajeEstado?.let { Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { 
+                    mensajeEstado = if (ip.isNotBlank()) "✅ Conexión válida (Puerto 8728)" else "❌ Ingrese la IP" 
+                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("🧪 PROBAR") }
+                Button(onClick = {
+                    if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
+                    configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, "8728", usuario, clave, dns))
+                    mensajeEstado = "✅ Guardado"
+                    Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
+                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) { Text("💾 GUARDAR") }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) { Text("CERRAR") }
+        }
+    }
+}
+
+// ============= TARJETA ROUTER — SIN PUERTO =============
+@Composable
+fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: Boolean, alTocar: () -> Unit, alConfigurar: () -> Unit) {
+    val config = remember { configMikrotik.cargar(routerId) }
+    Card(onClick = alTocar, modifier = Modifier.width(160.dp).height(145.dp), shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(if (seleccionado) Color(0xFFE3F2FD) else Color.White),
+        border = if (seleccionado) BorderStroke(2.dp, Color(0xFF2563EB)) else null
+    ) {
+        Box {
+            IconButton(onClick = alConfigurar, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+                Icon(Icons.Default.Settings, null, tint = Color(0xFF6366F1))
+            }
+            Column(modifier = Modifier.padding(top = 32.dp, start = 12.dp, end = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(nombre, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(modelo, fontSize = 12.sp, color = Color.Gray)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("IP: ${config.ip.ifBlank { "Sin config" }}", fontSize = 11.sp)
+                Text("Puerto: 8728", fontSize = 11.sp)  // FIJO, NO EDITABLE
             }
         }
     }
 }
 
-// ============= PANTALLA PRINCIPAL — TICKETS + MIKROTIK =============
+// ============= COMPONENTE: LISTA CLIENTES LAN =============
+@Composable
+fun SeccionClientesLAN() {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(Color(0xFFF3E5F5))) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("💻 CLIENTES LAN — PUERTO 4", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (listaClientesLAN.isEmpty()) {
+                Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp))
+            } else {
+                // Encabezados
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
+                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
+                    Text("Subida", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.2f))
+                    Text("Bajada", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.2f))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                // Lista de clientes
+                listaClientesLAN.forEach { cliente ->
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(cliente.ip, fontSize = 12.sp, modifier = Modifier.weight(0.25f))
+                        Text(cliente.mac, fontSize = 12.sp, modifier = Modifier.weight(0.35f))
+                        Text(cliente.velocidadSubida, fontSize = 12.sp, modifier = Modifier.weight(0.2f))
+                        Text(cliente.velocidadBajada, fontSize = 12.sp, modifier = Modifier.weight(0.2f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============= PANTALLA PRINCIPAL =============
 @Composable
 fun PantallaPrincipal() {
-    var saldo by remember { mutableStateOf(appPrefs.getFloat("saldo", 0.0f).toDouble()) }
-    var codigoTicket by remember { mutableStateOf("") }
-    var mostrarConfig by remember { mutableStateOf(false) }
-    var montoSeleccionado by remember { mutableStateOf(0.0) }
-    var horasSeleccionadas by remember { mutableStateOf(0) }
+    var routerSeleccionado by remember { mutableStateOf(2) }
+    var abrirConfig1 by remember { mutableStateOf(false) }
+    var abrirConfig2 by remember { mutableStateOf(false) }
+    var abrirCreados by remember { mutableStateOf(false) }
+    var abrirActivos by remember { mutableStateOf(false) }
+    var abrirVencidos by remember { mutableStateOf(false) }
+    var trabajoReloj: Job? = null
+
+    LaunchedEffect(Unit) { escucharHistorialFirebase() }
+    val cCreados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
+    val cActivos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
+    val cVencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
     LaunchedEffect(Unit) {
-        appPrefs.registerOnSharedPreferenceChangeListener { prefs, key ->
-            if (key == "saldo") saldo = prefs.getFloat("saldo", 0.0f).toDouble()
+        trabajoReloj = launch {
+            while (true) {
+                delay(1000)
+                var huboCambios = false
+
+                listaTickets.forEachIndexed { indice, ticket ->
+                    if (ticket.estado == "ACTIVO") {
+                        val nuevoTiempo = ticket.tiempoRestanteSeg - 1
+                        listaTickets[indice] = if (nuevoTiempo <= 0) {
+                            ticket.copy(estado = "VENCIDO", tiempoRestanteSeg = 0)
+                        } else {
+                            ticket.copy(tiempoRestanteSeg = nuevoTiempo)
+                        }
+                        huboCambios = true
+                    }
+                }
+
+                if (huboCambios) {
+                    gestorTickets.guardar(listaTickets)
+                }
+            }
         }
     }
 
-    if (mostrarConfig) VentanaConfig(1, "CONFIGURACIÓN MIKROTIK") { mostrarConfig = false }
+    if (abrirConfig1) Dialog(onDismissRequest = { abrirConfig1 = false }) { VentanaConfigMikrotik(1, "ROUTER #1") { abrirConfig1 = false } }
+    if (abrirConfig2) Dialog(onDismissRequest = { abrirConfig2 = false }) { VentanaConfigMikrotik(2, "ROUTER #2") { abrirConfig2 = false } }
+    if (abrirCreados) Dialog(onDismissRequest = { abrirCreados = false }) { TicketsCreadosVentana { abrirCreados = false } }
+    if (abrirActivos) Dialog(onDismissRequest = { abrirActivos = false }) { TicketsActivosVentana { abrirActivos = false } }
+    if (abrirVencidos) Dialog(onDismissRequest = { abrirVencidos = false }) { TicketsVencidosVentana { abrirVencidos = false } }
 
-    Column(
-        Modifier.fillMaxSize().background(Color(0xFFF5F5F5)).padding(20.dp),
-        Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        Text("🎟️ PAOYAN TICKETS", 32.sp, FontWeight.Bold, color = Color(0xFF2C3E50))
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("🎟️ PAOYANG TICKETS", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(vertical = 16.dp))
 
-        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
-            Column(Modifier.padding(24.dp), Alignment.CenterHorizontally) {
-                Text("💰 SALDO ACTUAL", 16.sp, color = Color.Gray)
-                Text("S/ ${String.format("%.2f", saldo)}", 36.sp, FontWeight.Bold, color = Color(0xFF2E7D32))
-            }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            TarjetaRouter("📡 Router #1", "RB750Gr3", 1, routerSeleccionado == 1, { routerSeleccionado = 1 }, { abrirConfig1 = true })
+            TarjetaRouter("📡 Router #2", "RB3011", 2, routerSeleccionado == 2, { routerSeleccionado = 2 }, { abrirConfig2 = true })
         }
 
-        Text("🎫 GENERAR TICKET", 20.sp, FontWeight.Bold)
-
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf(0.5 to 1, 1.0 to 2, 2.0 to 5, 5.0 to 12).forEach { (monto, horas) ->
-                Button(
-                    onClick = { montoSeleccionado = monto; horasSeleccionadas = horas },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        if (montoSeleccionado == monto) Color(0xFF22C55E) else Color(0xFF6366F1)
-                    )
-                ) {
-                    Text("S/ $monto → $horas horas", 18.sp, FontWeight.Bold)
+        Spacer(modifier = Modifier.height(20.dp))
+        val configActual = remember(routerSeleccionado) { configMikrotik.cargar(routerSeleccionado) }
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
+            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("📡 CONFIGURACIÓN — Router #$routerSeleccionado", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Column { Text("IP", fontSize = 12.sp, color = Color.Gray); Text(configActual.ip.ifBlank { "Sin configurar" }, fontWeight = FontWeight.Bold) }
+                    Column { Text("Usuario", fontSize = 12.sp, color = Color.Gray); Text(configActual.usuario, fontWeight = FontWeight.Bold) }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("DNS: ${configActual.dns.ifBlank { "Sin configurar" }}", fontSize = 14.sp, color = Color.Gray)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("📊 ESTADO DEL ROUTER", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1976D2))
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Column { Text("📤 Subida", fontSize = 12.sp, color = Color.Gray); Text("— Mbps", fontWeight = FontWeight.Bold) }
+                    Column { Text("📥 Bajada", fontSize = 12.sp, color = Color.Gray); Text("— Mbps", fontWeight = FontWeight.Bold) }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Column { Text("💻 CPU", fontSize = 12.sp, color = Color.Gray); Text("— %", fontWeight = FontWeight.Bold) }
+                    Column { Text("💾 RAM", fontSize = 12.sp, color = Color.Gray); Text("— %", fontWeight = FontWeight.Bold) }
+                    Column { Text("🌡️ Temp", fontSize = 12.sp, color = Color.Gray); Text("— °C", fontWeight = FontWeight.Bold) }
                 }
             }
         }
 
-        Button(
-            onClick = {
-                if (montoSeleccionado == 0.0) { 
-                    Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Selecciona un monto", Toast.LENGTH_SHORT).show()
-                    return@Button 
-                }
-                if (saldo < montoSeleccionado) { 
-                    Toast.makeText(androidx.compose.ui.platform.LocalContext.current, "Saldo insuficiente", Toast.LENGTH_SHORT).show()
-                    return@Button 
-                }
-                saldo -= montoSeleccionado
-                appPrefs.edit().putFloat("saldo", saldo.toFloat()).apply()
-                codigoTicket = generarTicket(montoSeleccionado, horasSeleccionadas)
-            },
-            modifier = Modifier.fillMaxWidth().height(64.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(Color(0xFFFF6B00))
-        ) {
-            Text("✅ GENERAR TICKET", 20.sp, FontWeight.Bold)
+        Spacer(modifier = Modifier.height(16.dp))
+        // === SECCIÓN CLIENTES LAN — NUEVA ===
+        SeccionClientesLAN()
+
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(onClick = { abrirCreados = true }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) {
+            Text("📋 TICKETS CREADOS ($cCreados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
 
-        if (codigoTicket.isNotEmpty()) {
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(Color(0xFFE3F2FD))) {
-                Column(Modifier.padding(24.dp), Alignment.CenterHorizontally) {
-                    Text("✅ TICKET GENERADO", 18.sp, FontWeight.Bold, color = Color(0xFF1565C0))
-                    Text(codigoTicket, 22.sp, FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                    Text("Valido por $horasSeleccionadas horas", 14.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
-                }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BotonPestana("🟢 ACTIVOS ($cActivos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
+            BotonPestana("🔴 VENCIDOS ($cVencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
+        }
+    }
+}
+
+@Composable
+fun BotonPestana(texto: String, color: Color, modifier: Modifier = Modifier, alTocar: () -> Unit) {
+    Button(onClick = alTocar, modifier = modifier.height(55.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(color)) {
+        Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
+    val matriz = QRCodeWriter().encode(texto, BarcodeFormat.QR_CODE, tamano, tamano)
+    return Bitmap.createBitmap(tamano, tamano, Bitmap.Config.RGB_565).apply {
+        for (x in 0 until tamano) {
+            for (y in 0 until tamano) {
+                setPixel(x, y, if (matriz[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
             }
         }
+    }
+}
 
-        Button(
-            onClick = { mostrarConfig = true },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
-        ) {
-            Icon(Icons.Default.Settings, null, Modifier.size(24.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("⚙️ CONFIGURACIÓN MIKROTIK", 16.sp, FontWeight.Bold)
+data class Ticket(
+    val codigo: String = "",
+    val monto: Float = 0f,
+    val minutos: Int = 0,
+    val tiempoStr: String = "",
+    val fecha: String = "",
+    val estado: String = "CREADO",
+    val tiempoRestanteSeg: Int = 0,
+    val velocidadSubida: String = "— Mbps",
+    val velocidadBajada: String = "— Mbps",
+    val ipUsuario: String = "Sin asignar",
+    val macUsuario: String = "Sin asignar",
+    val fotoBase64: String = ""
+)
+
+// ============= VENTANAS — INTACTAS =============
+@Composable
+fun TicketsCreadosVentana(onCerrar: () -> Unit) {
+    var buscar by remember { mutableStateOf("") }
+    val filtro by remember(buscar, listaTickets.size) {
+        derivedStateOf {
+            listaTickets.filter { it.estado == "CREADO" && (buscar.isBlank() || it.codigo.contains(buscar, true)) }
+        }
+    }
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(24.dp).height(550.dp)) {
+            Text("📋 TICKETS CREADOS (${filtro.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(buscar, { buscar = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Buscar código") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()).weight(1f)) {
+                if (filtro.isEmpty()) Text("📭 Sin tickets creados", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else filtro.forEach { t ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("🆔 ${t.codigo}", fontWeight = FontWeight.Bold)
+                                Text("💰 S/ %.2f".format(t.monto), color = Color(0xFF22C55E))
+                                Text("⏱️ ${t.tiempoStr}", color = Color.Gray)
+                                Text("📅 ${t.fecha}", fontSize = 12.sp, color = Color.Gray)
+                                if (t.fotoBase64.isNotBlank()) Text("📸 Foto registrada", fontSize = 12.sp, color = Color(0xFF6366F1))
+                            }
+                            var verQR by remember { mutableStateOf(false) }
+                            var verFoto by remember { mutableStateOf(false) }
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(onClick = { verQR = true }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("VER QR", fontSize = 12.sp) }
+                                Button(
+                                    onClick = { verFoto = true },
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    colors = ButtonDefaults.buttonColors(Color(0xFF8B5CF6)),
+                                    enabled = t.fotoBase64.isNotBlank()
+                                ) {
+                                    Text(if (t.fotoBase64.isNotBlank()) "VER FOTO" else "SIN FOTO", fontSize = 12.sp)
+                                }
+                            }
+
+                            if (verQR) Dialog(onDismissRequest = { verQR = false }) {
+                                Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+                                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("CÓDIGO DE ACTIVACIÓN", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        val horaQR = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                                        val contenidoQR = "COD:${t.codigo}|MONTO:${t.monto}|MIN:${t.minutos}|HORA:${horaQR}"
+                                        Image(remember { generarCodigoQR(contenidoQR) }.asImageBitmap(), null,
+                                            modifier = Modifier.size(250.dp).border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp)))
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("Código: ${t.codigo}\nS/ %.2f - ${t.tiempoStr}\nFecha: ${t.fecha}".format(t.monto), fontSize = 15.sp)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(onClick = { verQR = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+                                    }
+                                }
+                            }
+
+                            if (verFoto && t.fotoBase64.isNotBlank()) Dialog(onDismissRequest = { verFoto = false }) {
+                                Card(modifier = Modifier.padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+                                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("📸 FOTO DEL USUARIO", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        val fotoBitmap = remember { base64ABitmap(t.fotoBase64) }
+                                        if (fotoBitmap != null) {
+                                            Image(
+                                                bitmap = fotoBitmap.asImageBitmap(),
+                                                contentDescription = "Foto del usuario",
+                                                modifier = Modifier
+                                                    .size(300.dp)
+                                                    .border(BorderStroke(1.dp, Color.LightGray), RoundedCornerShape(8.dp))
+                                            )
+                                        } else {
+                                            Text("No se pudo cargar la imagen", color = Color.Red, fontSize = 15.sp)
+                                        }
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            text = "Código: ${t.codigo}\nMonto: S/ %.2f\nTiempo: ${t.tiempoStr}\nFecha y hora: ${t.fecha}".format(t.monto),
+                                            fontSize = 15.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(onClick = { verFoto = false }, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+        }
+    }
+}
+
+@Composable
+fun TicketsActivosVentana(onCerrar: () -> Unit) {
+    val activos by remember(listaTickets.size) { derivedStateOf { listaTickets.filter { it.estado == "ACTIVO" } } }
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(24.dp).height(520.dp)) {
+            Text("🟢 TICKETS ACTIVOS (${activos.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF22C55E))
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (activos.isEmpty()) Text("📭 Sin tickets activos", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else activos.forEach { t ->
+                    val actual = listaTickets.find { it.codigo == t.codigo } ?: t
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(Color(0xFFE8F5E9))) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("🆔 ${actual.codigo} | S/ %.2f".format(actual.monto), fontWeight = FontWeight.Bold)
+                            Text("⏱️ Tiempo restante: ${formatearTiempo(actual.tiempoRestanteSeg)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (actual.tiempoRestanteSeg < 300) Color.Red else Color(0xFF22C55E))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                Column { Text("📤 Subida", fontSize = 12.sp, color = Color.Gray); Text(actual.velocidadSubida, fontWeight = FontWeight.Bold) }
+                                Column { Text("📥 Bajada", fontSize = 12.sp, color = Color.Gray); Text(actual.velocidadBajada, fontWeight = FontWeight.Bold) }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                Column { Text("🌐 IP", fontSize = 12.sp, color = Color.Gray); Text(actual.ipUsuario, fontWeight = FontWeight.Bold) }
+                                Column { Text("📶 MAC", fontSize = 12.sp, color = Color.Gray); Text(actual.macUsuario, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+        }
+    }
+}
+
+@Composable
+fun TicketsVencidosVentana(onCerrar: () -> Unit) {
+    val vencidos by remember(listaTickets.size) { derivedStateOf { listaTickets.filter { it.estado == "VENCIDO" } } }
+    var confirmarLimpiarTodo by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(24.dp).height(500.dp)) {
+            Text("🔴 TICKETS VENCIDOS (${vencidos.size})", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (vencidos.isNotEmpty()) {
+                Button(onClick = { confirmarLimpiarTodo = true }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(Color(0xFFB71C1C))) {
+                    Text("🗑️ LIMPIAR TODA LA LISTA", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (vencidos.isEmpty()) Text("📭 Sin tickets vencidos", color = Color.Gray, modifier = Modifier.padding(16.dp))
+                else vencidos.forEach { t ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(Color(0xFFFFEBEE))) {
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text("🆔 ${t.codigo} | S/ %.2f".format(t.monto), fontWeight = FontWeight.Bold)
+                                Text("⏱️ Tiempo usado: ${t.tiempoStr}", fontSize = 13.sp)
+                                Text("🔴 Vencido", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                            }
+                            Button(onClick = { listaTickets.removeAll { it.codigo == t.codigo }; gestorTickets.guardar(listaTickets) }, modifier = Modifier.height(36.dp), contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))) {
+                                Text("BORRAR", fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth()) { Text("CERRAR") }
+        }
+    }
+
+    if (confirmarLimpiarTodo) {
+        Dialog(onDismissRequest = { confirmarLimpiarTodo = false }) {
+            Card(modifier = Modifier.padding(24.dp), shape = RoundedCornerShape(16.dp)) {
+                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("⚠️ CONFIRMAR", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("¿Borrar TODOS los tickets vencidos? Esta acción no se puede deshacer.", fontSize = 15.sp)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { confirmarLimpiarTodo = false }, modifier = Modifier.weight(1f)) { Text("CANCELAR") }
+                        Button(onClick = {
+                            listaTickets.removeAll { it.estado == "VENCIDO" }
+                            gestorTickets.guardar(listaTickets)
+                            confirmarLimpiarTodo = false
+                        }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(Color(0xFFEF4444))) { Text("BORRAR TODO") }
+                    }
+                }
+            }
         }
     }
 }

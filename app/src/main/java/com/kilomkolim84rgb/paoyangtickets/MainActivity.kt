@@ -2,9 +2,6 @@ package com.kilomkolim84rgb.paoyangtickets
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import android.widget.Toast
 import android.util.Base64
@@ -25,9 +22,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.google.firebase.database.FirebaseDatabase
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers
 import java.net.HttpURLConnection
@@ -37,14 +31,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configMikrotik = MikrotikConfig(this)
-        gestorTickets = TicketManager(this)
         setContent {
             PantallaPrincipal()
         }
     }
 }
-
-val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
 // 📊 DATOS DEL ROUTER — SOLO LO NECESARIO
@@ -189,20 +180,6 @@ class MikrotikConfig(context: Context) {
 }
 lateinit var configMikrotik: MikrotikConfig
 
-// ============== TICKET — MÍNIMO ==============
-data class Ticket(
-    val codigo: String = "",
-    val monto: Float = 0f,
-    val estado: String = "CREADO"
-)
-
-class TicketManager(context: Context) {
-    private val archivo = context.filesDir.resolve("tickets_guardados.txt")
-    fun cargar(): MutableList<Ticket> = mutableListOf()
-    fun guardar(tickets: List<Ticket>) {}
-}
-lateinit var gestorTickets: TicketManager
-
 // ============== VENTANA CONFIG ==============
 @Composable
 fun VentanaConfig(onCerrar: () -> Unit) {
@@ -213,7 +190,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     var clave by remember { mutableStateOf(config.clave) }
 
     Dialog(onDismissRequest = onCerrar) {
-        Card(modifier = Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
+        Card(modifier = Modifier.fillMaxWidth().padding(24.dp), shape = RoundedCornerShape(20.dp)) {
             Column(modifier = Modifier.padding(28.dp)) {
                 Text("⚙️ CONFIGURACIÓN RB750Gr3", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
                 Spacer(Modifier.height(24.dp))
@@ -265,7 +242,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== PANTALLA PRINCIPAL — SOLO RB750Gr3 ✅ ==============
+// ============== PANTALLA PRINCIPAL — IGUAL A LA IMAGEN ✅ ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -285,105 +262,103 @@ fun PantallaPrincipal() {
     }
 
     MaterialTheme {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFFF5F5F5))
                 .padding(20.dp)
         ) {
-            Column(
+            // TÍTULO
+            Text(
+                "🎟️ PAOYHAN TICKETS",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2C3E50),
+                modifier = Modifier.padding(vertical = 20.dp)
+            )
+
+            // ==============================
+            // 📡 TARJETA RB750Gr3 — IGUAL A LA IMAGEN
+            // ==============================
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(Color(0xFFFFF3E0)), // Fondo naranja claro igual a la imagen
+                elevation = CardDefaults.cardElevation(2.dp)
             ) {
-                // TÍTULO
-                Text(
-                    "🎟️ PAOYHAN TICKETS",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2C3E50),
-                    modifier = Modifier.padding(vertical = 20.dp)
-                )
-
-                // ==============================
-                // 📊 TARJETA DEL ROUTER — ÚNICO: RB750Gr3
-                // ==============================
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        if (datosRouter.conectado) Color(0xFFE8F5E9)
-                        else Color(0xFFFFF3E0)
-                    ),
-                    elevation = CardDefaults.cardElevation(4.dp)
+                Column(
+                    modifier = Modifier.padding(24.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    // NOMBRE + ÍCONO CONFIGURACIÓN
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // NOMBRE + BOTÓN CONFIG
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "📡 RB750Gr3",
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1565C0)
-                            )
-                            IconButton(onClick = { abrirConfig = true }) {
-                                Icon(Icons.Default.Settings, "Configurar", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
-                            }
-                        }
-
-                        Spacer(Modifier.height(24.dp))
-
-                        if (!datosRouter.conectado && config.ip.isNotBlank()) {
-                            Text("⚠️ Conectando...", fontSize = 16.sp, color = Color(0xFFE65100))
-                            if (cargando) CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
-                        } else if (config.ip.isBlank()) {
-                            Text("⚠️ Toca el ícono ⚙️ para configurar la IP", fontSize = 16.sp, color = Color.Gray)
-                        } else {
-                            // ✅ IP
-                            DatoFila("IP", datosRouter.ip, Color(0xFF1565C0))
-                            Spacer(Modifier.height(16.dp))
-
-                            // ✅ CPU
-                            DatoFila("💻 CPU", "${datosRouter.cpu}%", Color(0xFF2E7D32))
-                            Spacer(Modifier.height(16.dp))
-
-                            // ✅ RAM
-                            DatoFila("💾 RAM", "${datosRouter.ram}%", Color(0xFF2E7D32))
-                            Spacer(Modifier.height(16.dp))
-
-                            // ✅ SUBIDA
-                            DatoFila("⬆️ SUBIDA", datosRouter.subida, Color(0xFF6A1B9A))
-                            Spacer(Modifier.height(16.dp))
-
-                            // ✅ BAJADA
-                            DatoFila("⬇️ BAJADA", datosRouter.bajada, Color(0xFF6A1B9A))
+                        Text(
+                            "📡 RB750Gr3",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1565C0)
+                        )
+                        IconButton(onClick = { abrirConfig = true }) {
+                            Icon(Icons.Default.Settings, "Configurar", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
                         }
                     }
-                }
 
-                Spacer(Modifier.height(40.dp))
+                    Spacer(Modifier.height(16.dp))
+
+                    // MENSAJE SI NO HAY IP CONFIGURADA
+                    if (config.ip.isBlank()) {
+                        Text(
+                            "⚠️ Toca el ícono ⚙️ para configurar la IP",
+                            fontSize = 15.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    // CONECTANDO
+                    else if (!datosRouter.conectado) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔄 Conectando...", fontSize = 15.sp, color = Color(0xFFE65100))
+                            if (cargando) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp).padding(start = 8.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        }
+                    }
+                    // ✅ CONECTADO — MOSTRAR TODOS LOS DATOS
+                    else {
+                        DatoFila("IP", datosRouter.ip)
+                        Spacer(Modifier.height(12.dp))
+                        DatoFila("💻 CPU", "${datosRouter.cpu}%")
+                        Spacer(Modifier.height(12.dp))
+                        DatoFila("💾 RAM", "${datosRouter.ram}%")
+                        Spacer(Modifier.height(12.dp))
+                        DatoFila("⬆️ SUBIDA", datosRouter.subida)
+                        Spacer(Modifier.height(12.dp))
+                        DatoFila("⬇️ BAJADA", datosRouter.bajada)
+                    }
+                }
             }
+
+            Spacer(Modifier.weight(1f))
         }
 
         if (abrirConfig) VentanaConfig { abrirConfig = false }
     }
 }
 
-// ============== COMPONENTE FILA DE DATOS ==============
+// ============== FILA DE DATOS ==============
 @Composable
-fun DatoFila(etiqueta: String, valor: String, color: Color) {
+fun DatoFila(etiqueta: String, valor: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(etiqueta, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-        Text(valor, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = color)
+        Text(etiqueta, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Color(0xFF424242))
+        Text(valor, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
     }
 }

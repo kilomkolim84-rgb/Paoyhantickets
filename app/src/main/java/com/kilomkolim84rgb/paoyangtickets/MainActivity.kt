@@ -26,10 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.*
@@ -52,7 +49,7 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
-// 🔧 CONEXIÓN MIKROTIK — CON INTERFAZ/PUERTO ✅
+// 🔧 CONEXIÓN MIKROTIK — SIN ERRORES DE SINTAXIS ✅
 // ==============================================
 data class DatosRouter(
     val conectado: Boolean = false,
@@ -178,7 +175,10 @@ object MikrotikAPI {
             }
 
             DatosRouter(
-                conectado = true, cpu = cpu, ram = ram, temperatura = temperatura,
+                conectado = true,
+                cpu = cpu,
+                ram = ram,
+                temperatura = temperatura,
                 clientes = clientes.distinctBy { it.ip }
             )
         }
@@ -215,8 +215,14 @@ object MikrotikAPI {
 
 // ============== CONFIGURACIÓN ==============
 class MikrotikConfig(context: Context) {
-    private val prefs = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE
-    data class Config(val ip: String = "", val puerto: String = "8080", val usuario: String = "admin", val clave: String = "", val dns: String = "")
+    private val prefs = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
+    data class Config(
+        val ip: String = "",
+        val puerto: String = "8080",
+        val usuario: String = "admin",
+        val clave: String = "",
+        val dns: String = ""
+    )
     fun cargar(id: Int) = Config(
         ip = prefs.getString("r${id}_ip", "") ?: "",
         puerto = "8080",
@@ -257,20 +263,22 @@ class TicketManager(context: Context) {
             archivo.bufferedReader().use { reader ->
                 reader.lineSequence().forEach { linea ->
                     val datos = linea.split("|")
-                    if (datos.size >= 11) add(Ticket(
-                        datos[0],
-                        datos[1].toFloatOrNull() ?: 0f,
-                        datos[2].toIntOrNull() ?: 0,
-                        datos[3],
-                        datos[4],
-                        datos[5],
-                        datos[6].toIntOrNull() ?: 0,
-                        datos[7],
-                        datos[8],
-                        datos[9],
-                        datos.getOrNull(10) ?: "",
-                        datos.getOrNull(11) ?: ""
-                    ))
+                    if (datos.size >= 11) {
+                        add(Ticket(
+                            datos[0],
+                            datos[1].toFloatOrNull() ?: 0f,
+                            datos[2].toIntOrNull() ?: 0,
+                            datos[3],
+                            datos[4],
+                            datos[5],
+                            datos[6].toIntOrNull() ?: 0,
+                            datos[7],
+                            datos[8],
+                            datos[9],
+                            datos.getOrNull(10) ?: "",
+                            datos.getOrNull(11) ?: ""
+                        ))
+                    }
                 }
             }
         } catch (e: Exception) { e.printStackTrace() }
@@ -356,13 +364,22 @@ fun VentanaConfigRouter(routerId: Int, nombreRouter: String, onCerrar: () -> Uni
                 )
                 Spacer(Modifier.height(20.dp))
 
-                mensajeEstado?.let { Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
+                mensajeEstado?.let {
+                    Text(
+                        it,
+                        fontSize = 14.sp,
+                        color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
                         onClick = {
-                            if (ip.isBlank()) { mensajeEstado = "❌ Ingrese la IP"; return@Button }
+                            if (ip.isBlank()) {
+                                mensajeEstado = "❌ Ingrese la IP"
+                                return@Button
+                            }
                             probando = true
                             mensajeEstado = "🔄 Conectando..."
                             CoroutineScope(Dispatchers.IO).launch {
@@ -375,25 +392,34 @@ fun VentanaConfigRouter(routerId: Int, nombreRouter: String, onCerrar: () -> Uni
                         },
                         enabled = !probando,
                         modifier = Modifier.weight(1f)
-                    ) { Text(if (probando) "⏳" else "🧪 PROBAR") }
+                    ) {
+                        Text(if (probando) "⏳" else "🧪 PROBAR")
+                    }
 
                     Button(
                         onClick = {
-                            if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
+                            if (ip.isBlank()) {
+                                mensajeEstado = "❌ IP obligatoria"
+                                return@Button
+                            }
                             configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, "8080", usuario, clave, dns))
                             mensajeEstado = "✅ Guardado"
                             Toast.makeText(contexto, "Guardado", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))
-                    ) { Text("💾 GUARDAR") }
+                    ) {
+                        Text("💾 GUARDAR")
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = onCerrar,
                     Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(Color(0xFF818CF8))
-                ) { Text("CERRAR") }
+                ) {
+                    Text("CERRAR")
+                }
             }
         }
     }
@@ -506,7 +532,6 @@ fun PantallaPrincipal() {
 
     val configActual = remember(routerSeleccionado) { configMikrotik.cargar(routerSeleccionado) }
 
-    // ✅ ACTUALIZACIÓN AUTOMÁTICA EN TIEMPO REAL — CADA 3 SEGUNDOS
     LaunchedEffect(routerSeleccionado, configActual.ip) {
         if (configActual.ip.isBlank()) return@LaunchedEffect
         while (isActive) {
@@ -539,8 +564,14 @@ fun PantallaPrincipal() {
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TarjetaRouter("📡 Router #1", "RB750Gr3", 1, routerSeleccionado == 1, { routerSeleccionado = 1 }, { abrirConfig1 = true })
-                    TarjetaRouter("📡 Router #2", "RB3011", 2, routerSeleccionado == 2, { routerSeleccionado = 2 }, { abrirConfig2 = true })
+                    TarjetaRouter(
+                        "📡 Router #1", "RB750Gr3", 1, routerSeleccionado == 1,
+                        { routerSeleccionado = 1 }, { abrirConfig1 = true }
+                    )
+                    TarjetaRouter(
+                        "📡 Router #2", "RB3011", 2, routerSeleccionado == 2,
+                        { routerSeleccionado = 2 }, { abrirConfig2 = true }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))

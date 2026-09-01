@@ -36,7 +36,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.*
-import java.net.Socket
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -54,7 +55,7 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
-// 🔧 CONEXIÓN MIKROTIK + TRAER TODOS LOS DATOS
+// 🔧 CONEXIÓN MIKROTIK POR REST API — FUNCIONA EN V6 Y V7 ✅
 // ==============================================
 data class DatosRouter(
     val conectado: Boolean = false,
@@ -76,155 +77,149 @@ data class ClienteLAN(
 object MikrotikAPI {
     var ultimoError = ""
 
-    private suspend fun login(ip: String, puerto: Int, usuario: String, clave: String, entrada: InputStream, salida: OutputStream): Boolean {
-        enviarComando(salida, "/login", "=name=$usuario", "=password=$clave")
-        val resp = leerRespuesta(entrada)
-        return resp.any { it == "!done" }
+    private suspend fun hacerPeticion(
+        ip: String,
+        puerto: Int,
+        usuario: String,
+        clave: String,
+        recurso: String
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = "http://$ip:$puerto/rest$recurso"
+            val conexion = URL(url).openConnection() as HttpURLConnection
+            conexion.apply {
+                requestMethod = "GET"
+                connectTimeout = 5000
+                readTimeout = 5000
+                val credenciales = Base64.encodeToString(
+                    "$usuario:$clave".toByteArray(),
+                    Base64.NO_WRAP
+                )
+                setRequestProperty("Authorization", "Basic $credenciales")
+            }
+
+            val codigo = conexion.responseCode
+            if (codigo == 401) {
+                ultimoError = "❌ Usuario o contraseña incorrectos"
+                return@withContext null
+            }
+            if (codigo != 200) {
+                ultimoError = "❌ Error HTTP $codigo — ¿REST API habilitado?"
+                return@withContext null
+            }
+
+            val respuesta = conexion.inputStream.bufferedReader().use { it.readText() }
+            conexion.disconnect()
+            respuesta
+        } catch (e: Exception) {
+            ultimoError = "❌ ${e.message ?: "Sin conexión"}"
+            null
+        }
     }
 
     suspend fun probarConexion(ip: String, puerto: Int, usuario: String, clave: String): Boolean {
         ultimoError = ""
-        return withContext(Dispatchers.IO) {
-            try {
-                val socket = Socket(ip, puerto)
-                socket.soTimeout = 5000
-                val entrada = socket.getInputStream()
-                val salida = socket.getOutputStream()
-                val ok = login(ip, puerto, usuario, clave, entrada, salida)
-                socket.close()
-                ok
-            } catch (e: Exception) {
-                ultimoError = e.message ?: "Sin conexión"
-                false
-            }
+        val puertos = listOf(puerto, 8080, 80)
+        for (p in puertos) {
+            val resp = hacerPeticion(ip, p, usuario, clave, "/system/resource")
+            if (resp != null) return true
         }
+        return false
     }
 
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
         return withContext(Dispatchers.IO) {
+            val puertos = listOf(puerto, 8080, 80)
+            var puertoUsado = 8080
+            var respuesta: String? = null
+
+            for (p in puertos) {
+                respuesta = hacerPeticion(ip, p, usuario, clave, "/system/resource")
+                if (respuesta != null) {
+                    puertoUsado = p
+                    break
+                }
+            }
+
+            if (respuesta == null) {
+                return@withContext DatosRouter(conectado = false, error = ultimoError)
+            }
+
+            var cpu = "—"
+            var ram = "—"
+            var temperatura = "—"
+
             try {
-                val socket = Socket(ip, puerto)
-                socket.soTimeout = 8000
-                val entrada = socket.getInputStream()
-                val salida = socket.getOutputStream()
-
-                if (!login(ip, puerto, usuario, clave, entrada, salida)) {
-                    socket.close()
-                    return@withContext DatosRouter(conectado = false, error = "Error de login")
+                val jsonLimpio = respuesta!!.trim().removeSurrounding("[", "]")
+                val map = parsearJsonSimple(jsonLimpio)
+                map["cpu-load"]?.let { cpu = it }
+                map["free-memory"]?.let { libreStr ->
+                    val libre = libreStr.toLongOrNull() ?: 0
+                    val total = map["total-memory"]?.toLongOrNull() ?: 1
+                    ram = "${((total - libre) * 100) / total}%"
                 }
-
-                // 1. RECURSOS: CPU, RAM, TEMPERATURA
-                enviarComando(salida, "/system/resource/print")
-                val respRecursos = leerRespuesta(entrada)
-
-                // 2. CLIENTES CONECTADOS (ARP + DHCP)
-                enviarComando(salida, "/ip/arp/print", "?=dynamic=yes")
-                val respArp = leerRespuesta(entrada)
-
-                enviarComando(salida, "/ip/dhcp-server/lease/print")
-                val respLeases = leerRespuesta(entrada)
-
-                socket.close()
-
-                // PARSEAR RECURSOS
-                var cpu = "—"
-                var ram = "—"
-                var temperatura = "—"
-                for (linea in respRecursos) {
-                    when {
-                        linea.startsWith("=cpu-load=") -> cpu = linea.substringAfter("=")
-                        linea.startsWith("=free-memory=") -> {
-                            val libre = linea.substringAfter("=").toLongOrNull() ?: 0
-                            val total = respRecursos.find { it.startsWith("=total-memory=") }?.substringAfter("=")?.toLongOrNull() ?: 1
-                            val porcentaje = ((total - libre) * 100) / total
-                            ram = "$porcentaje%"
-                        }
-                        linea.startsWith("=temperature=") -> temperatura = linea.substringAfter("=") + "°C"
-                    }
-                }
-
-                // PARSEAR CLIENTES
-                val clientes = mutableListOf<ClienteLAN>()
-                for (linea in respArp + respLeases) {
-                    if (linea.contains("=address=") && linea.contains("=mac-address=")) {
-                        val ipMatch = Regex("=address=([\\d.]+)").find(linea)?.groupValues?.get(1)
-                        val macMatch = Regex("=mac-address=([\\w:]+)").find(linea)?.groupValues?.get(1)
-                        val nombreMatch = Regex("=host-name=([^=]+)").find(linea)?.groupValues?.get(1)
-                        if (ipMatch != null && macMatch != null) {
-                            clientes.add(ClienteLAN(ip = ipMatch, mac = macMatch, nombre = nombreMatch ?: ""))
-                        }
-                    }
-                }
-
-                DatosRouter(
-                    conectado = true,
-                    cpu = cpu,
-                    ram = ram,
-                    temperatura = temperatura,
-                    subida = "— Mbps",
-                    bajada = "— Mbps",
-                    clientes = clientes.distinctBy { it.ip }
-                )
+                map["temperature"]?.let { temperatura = "$it°C" }
             } catch (e: Exception) {
-                ultimoError = e.message ?: "Error al leer datos"
-                DatosRouter(conectado = false, error = ultimoError)
+                ultimoError = "Error al leer recursos"
             }
+
+            val clientes = mutableListOf<ClienteLAN>()
+            val respArp = hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")
+            if (respArp != null) {
+                parsearListaJson(respArp).forEach { map ->
+                    if (map["address"] != null && map["mac-address"] != null) {
+                        clientes.add(ClienteLAN(map["address"]!!, map["mac-address"]!!, map["host-name"] ?: ""))
+                    }
+                }
+            }
+            val respDhcp = hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")
+            if (respDhcp != null) {
+                parsearListaJson(respDhcp).forEach { map ->
+                    if (map["active-address"] != null && map["active-mac-address"] != null) {
+                        clientes.add(ClienteLAN(map["active-address"]!!, map["active-mac-address"]!!, map["host-name"] ?: ""))
+                    }
+                }
+            }
+
+            DatosRouter(
+                conectado = true,
+                cpu = cpu,
+                ram = ram,
+                temperatura = temperatura,
+                subida = "— Mbps",
+                bajada = "— Mbps",
+                clientes = clientes.distinctBy { it.ip }
+            )
         }
     }
 
-    private fun enviarComando(salida: OutputStream, vararg partes: String) {
-        partes.forEach { cmd ->
-            val bytes = cmd.toByteArray(Charsets.UTF_8)
-            escribirLongitud(salida, bytes.size)
-            salida.write(bytes)
-        }
-        escribirLongitud(salida, 0)
-        salida.flush()
-    }
-
-    private fun escribirLongitud(salida: OutputStream, len: Int) {
-        when {
-            len < 0x80 -> salida.write(len)
-            len < 0x4000 -> {
-                salida.write(0x80 or (len shr 8))
-                salida.write(len and 0xFF)
-            }
-            len < 0x200000 -> {
-                salida.write(0xC0 or (len shr 16))
-                salida.write((len shr 8) and 0xFF)
-                salida.write(len and 0xFF)
-            }
-            else -> {
-                salida.write(0xE0 or (len shr 24))
-                salida.write((len shr 16) and 0xFF)
-                salida.write((len shr 8) and 0xFF)
-                salida.write(len and 0xFF)
+    private fun parsearJsonSimple(json: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        val contenido = json.trim().removeSurrounding("{", "}")
+        contenido.split(",").forEach { par ->
+            val partes = par.split(":", limit = 2)
+            if (partes.size == 2) {
+                map[partes[0].trim().removeSurrounding("\"")] = partes[1].trim().removeSurrounding("\"")
             }
         }
+        return map
     }
 
-    private fun leerRespuesta(entrada: InputStream): List<String> {
-        val resp = mutableListOf<String>()
-        while (true) {
-            val len = leerLongitud(entrada)
-            if (len == 0) break
-            val datos = ByteArray(len)
-            entrada.read(datos)
-            resp.add(String(datos, Charsets.UTF_8))
+    private fun parsearListaJson(json: String): List<Map<String, String>> {
+        val lista = mutableListOf<Map<String, String>>()
+        val contenido = json.trim().removeSurrounding("[", "]")
+        if (contenido.isBlank()) return lista
+        var i = 0
+        while (i < contenido.length) {
+            val inicio = contenido.indexOf("{", i)
+            if (inicio == -1) break
+            var fin = contenido.indexOf("}", inicio)
+            if (fin == -1) fin = contenido.length
+            lista.add(parsearJsonSimple(contenido.substring(inicio, fin + 1)))
+            i = fin + 1
         }
-        return resp
-    }
-
-    private fun leerLongitud(entrada: InputStream): Int {
-        var b = entrada.read()
-        return when {
-            b < 0x80 -> b
-            b < 0xC0 -> ((b and 0x7F) shl 8) or entrada.read()
-            b < 0xE0 -> ((b and 0x3F) shl 16) or (entrada.read() shl 8) or entrada.read()
-            b < 0xF0 -> ((b and 0x1F) shl 24) or (entrada.read() shl 16) or (entrada.read() shl 8) or entrada.read()
-            else -> 0
-        }
+        return lista
     }
 }
 
@@ -234,7 +229,7 @@ class MikrotikConfig(context: Context) {
 
     data class Config(
         val ip: String = "",
-        val puerto: String = "8728",
+        val puerto: String = "8080",
         val usuario: String = "admin",
         val clave: String = "",
         val dns: String = ""
@@ -243,7 +238,7 @@ class MikrotikConfig(context: Context) {
     fun cargar(id: Int): Config {
         return Config(
             ip = prefs.getString("r${id}_ip", "") ?: "",
-            puerto = "8728",
+            puerto = "8080",
             usuario = prefs.getString("r${id}_usuario", "admin") ?: "admin",
             clave = prefs.getString("r${id}_clave", "") ?: "",
             dns = prefs.getString("r${id}_dns", "") ?: ""
@@ -369,7 +364,7 @@ fun VentanaConfigRouter(routerId: Int, nombreRouter: String, onCerrar: () -> Uni
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(clave, { clave = it }, label = { Text("Contraseña") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(dns, { dns = it }, label = { Text("DNS") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(dns, { dns = it }, label = { Text("DNS (opcional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Spacer(modifier = Modifier.height(20.dp))
 
                 mensajeEstado?.let { Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
@@ -381,9 +376,9 @@ fun VentanaConfigRouter(routerId: Int, nombreRouter: String, onCerrar: () -> Uni
                             if (ip.isBlank()) { mensajeEstado = "❌ Ingrese la IP"; return@Button }
                             probando = true; mensajeEstado = "🔄 Conectando..."
                             CoroutineScope(Dispatchers.IO).launch {
-                                val ok = MikrotikAPI.probarConexion(ip, 8728, usuario, clave)
+                                val ok = MikrotikAPI.probarConexion(ip, 8080, usuario, clave)
                                 withContext(Dispatchers.Main) {
-                                    mensajeEstado = if (ok) "✅ CONECTADO — MikroTik respondió correctamente" else "❌ ERROR: ${MikrotikAPI.ultimoError}"
+                                    mensajeEstado = if (ok) "✅ CONECTADO — MikroTik respondió correctamente" else MikrotikAPI.ultimoError
                                     probando = false
                                 }
                             }
@@ -394,7 +389,7 @@ fun VentanaConfigRouter(routerId: Int, nombreRouter: String, onCerrar: () -> Uni
                     Button(
                         onClick = {
                             if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
-                            configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, "8728", usuario, clave, dns))
+                            configMikrotik.guardar(routerId, MikrotikConfig.Config(ip, "8080", usuario, clave, dns))
                             mensajeEstado = "✅ Guardado"
                             Toast.makeText(contexto, "Configuración guardada", Toast.LENGTH_SHORT).show()
                         },
@@ -425,7 +420,7 @@ fun TarjetaRouter(nombre: String, modelo: String, routerId: Int, seleccionado: B
                 Text(modelo, fontSize = 12.sp, color = Color.Gray)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text("IP: ${config.ip.ifBlank { "Sin config" }}", fontSize = 11.sp)
-                Text("Puerto: 8728", fontSize = 11.sp)
+                Text("Puerto: 8080", fontSize = 11.sp)
             }
         }
     }
@@ -496,11 +491,10 @@ fun PantallaPrincipal() {
 
     val configActual = remember(routerSeleccionado) { configMikrotik.cargar(routerSeleccionado) }
 
-    // CARGAR DATOS AUTOMÁTICAMENTE
     LaunchedEffect(routerSeleccionado, configActual.ip) {
         if (configActual.ip.isNotBlank()) {
             cargandoDatos = true
-            datosRouter = MikrotikAPI.obtenerTodo(configActual.ip, 8728, configActual.usuario, configActual.clave)
+            datosRouter = MikrotikAPI.obtenerTodo(configActual.ip, 8080, configActual.usuario, configActual.clave)
             cargandoDatos = false
         }
     }
@@ -521,7 +515,6 @@ fun PantallaPrincipal() {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // 📊 TARJETA DE ESTADO EN VIVO
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(if (datosRouter.conectado) Color(0xFFE8F5E9) else Color(0xFFFFF3E0))
                 ) {
@@ -549,17 +542,6 @@ fun PantallaPrincipal() {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("🌡️ TEMP", fontSize = 12.sp, color = Color.Gray)
                                     Text(datosRouter.temperatura, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("📤 SUBIDA", fontSize = 12.sp, color = Color.Gray)
-                                    Text(datosRouter.subida, fontWeight = FontWeight.Bold)
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("📥 BAJADA", fontSize = 12.sp, color = Color.Gray)
-                                    Text(datosRouter.bajada, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

@@ -121,7 +121,8 @@ object MikrotikAPI {
         return false
     }
 
-    private fun leerVelocidad(ip: String, puerto: Int, usuario: String, clave: String, interfaz: String): Pair<String, String> {
+    // ✅ CORREGIDO: ahora es suspend y se llama correctamente
+    private suspend fun leerVelocidad(ip: String, puerto: Int, usuario: String, clave: String, interfaz: String): Pair<String, String> {
         var subida = "— Mbps"
         var bajada = "— Mbps"
         hacerPeticion(ip, puerto, usuario, clave, "/interface/$interfaz/monitor")?.let { resp ->
@@ -166,7 +167,7 @@ object MikrotikAPI {
                 ultimoError = "Error al leer recursos"
             }
 
-            // Velocidades de Ether1 y Ether4
+            // ✅ CORREGIDO: llamamos a leerVelocidad con await
             val (subidaE1, bajadaE1) = leerVelocidad(ip, puertoUsado, usuario, clave, "ether1")
             val (subidaE4, bajadaE4) = leerVelocidad(ip, puertoUsado, usuario, clave, "ether4")
 

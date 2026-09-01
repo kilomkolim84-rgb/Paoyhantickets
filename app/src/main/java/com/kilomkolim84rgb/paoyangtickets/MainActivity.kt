@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
-// 📊 DATOS DEL ROUTER — SOLO RB750Gr3
+// 📊 DATOS DEL ROUTER — RB750Gr3 con NOMBRES Y VELOCIDAD
 // ==============================================
 data class DatosRouter(
     val conectado: Boolean = false,
@@ -66,7 +66,9 @@ data class ClienteLAN(
     val ip: String,
     val mac: String,
     val nombre: String = "",
-    val interfaz: String = ""
+    val interfaz: String = "",
+    val velocidadActual: String = "—",
+    val limiteVelocidad: String = "—"
 )
 
 object MikrotikAPI {
@@ -118,6 +120,12 @@ object MikrotikAPI {
         return false
     }
 
+    private fun convertirBytesAMbps(bytes: Long, segundos: Long = 1): String {
+        val bitsPorSegundo = bytes * 8 / segundos
+        val mbps = bitsPorSegundo / 1_000_000.0
+        return "%.1f Mbps".format(mbps)
+    }
+
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
         return withContext(Dispatchers.IO) {
@@ -148,27 +156,80 @@ object MikrotikAPI {
                 ultimoError = "Error al leer recursos"
             }
 
-            val clientes = mutableListOf<ClienteLAN>()
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
-                parsearListaJson(respArp).forEach { map ->
-                    if (map["address"] != null && map["mac-address"] != null) {
-                        clientes.add(ClienteLAN(
-                            ip = map["address"]!!,
-                            mac = map["mac-address"]!!,
-                            nombre = map["host-name"] ?: "",
-                            interfaz = map["interface"] ?: "—"
-                        ))
+            // LEER SIMPLE QUEUE — NOMBRES Y LÍMITES
+            val mapaQueue = mutableMapOf<String, Pair<String, String>>() // ip -> nombre, limite
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQueue ->
+                parsearListaJson(respQueue).forEach { map ->
+                    val nombre = map["name"] ?: ""
+                    val objetivo = map["target"] ?: ""
+                    val limite = map["max-limit"] ?: "—"
+                    // Extraer IP del objetivo (formato: 172.16.1.250/32)
+                    val ipObjetivo = objetivo.split("/").firstOrNull() ?: ""
+                    if (ipObjetivo.isNotEmpty() && nombre.isNotEmpty()) {
+                        mapaQueue[ipObjetivo] = Pair(nombre, limite)
                     }
                 }
             }
+
+            // LEER ARP — COMENTARIOS
+            val mapaArpComment = mutableMapOf<String, String>() // ip -> comentario
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
+                parsearListaJson(respArp).forEach { map ->
+                    val ip = map["address"] ?: return@forEach
+                    val comentario = map["comment"] ?: ""
+                    if (comentario.isNotEmpty()) {
+                        mapaArpComment[ip] = comentario
+                    }
+                }
+            }
+
+            // LEER ARP COMPLETO + CRUZAR CON QUEUE Y COMENTARIOS
+            val clientes = mutableListOf<ClienteLAN>()
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
+                parsearListaJson(respArp).forEach { map ->
+                    val ip = map["address"] ?: return@forEach
+                    val mac = map["mac-address"] ?: return@forEach
+                    val interfaz = map["interface"] ?: "—"
+                    
+                    // NOMBRE: primero Simple Queue, luego comentario ARP, sino vacío
+                    val nombreQueue = mapaQueue[ip]?.first ?: ""
+                    val nombreComment = mapaArpComment[ip] ?: ""
+                    val nombreFinal = nombreQueue.ifBlank { nombreComment }
+                    
+                    // LÍMITE DE VELOCIDAD del Simple Queue
+                    val limite = mapaQueue[ip]?.second ?: "—"
+
+                    clientes.add(ClienteLAN(
+                        ip = ip,
+                        mac = mac,
+                        nombre = nombreFinal,
+                        interfaz = interfaz,
+                        velocidadActual = "—",
+                        limiteVelocidad = limite
+                    ))
+                }
+            }
+
+            // También leer leases DHCP por si faltan
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
                 parsearListaJson(respDhcp).forEach { map ->
-                    if (map["active-address"] != null && map["active-mac-address"] != null) {
+                    val ip = map["active-address"] ?: return@forEach
+                    val mac = map["active-mac-address"] ?: return@forEach
+                    val interfaz = map["interface"] ?: "—"
+                    
+                    val nombreQueue = mapaQueue[ip]?.first ?: ""
+                    val nombreComment = map["comment"] ?: map["host-name"] ?: ""
+                    val nombreFinal = nombreQueue.ifBlank { nombreComment }
+                    val limite = mapaQueue[ip]?.second ?: "—"
+
+                    if (clientes.none { it.ip == ip }) {
                         clientes.add(ClienteLAN(
-                            ip = map["active-address"]!!,
-                            mac = map["active-mac-address"]!!,
-                            nombre = map["host-name"] ?: map["comment"] ?: "",
-                            interfaz = map["interface"] ?: "—"
+                            ip = ip,
+                            mac = mac,
+                            nombre = nombreFinal,
+                            interfaz = interfaz,
+                            velocidadActual = "—",
+                            limiteVelocidad = limite
                         ))
                     }
                 }
@@ -425,7 +486,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== SECCIÓN CLIENTES — IGUAL ==============
+// ============== SECCIÓN CLIENTES — AHORA CON NOMBRE DEL SIMPLE QUEUE + LÍMITE ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -443,18 +504,20 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                 Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp)
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.28f))
-                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
-                    Text("ETHER", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.15f))
-                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
+                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
+                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
+                    Text("ETHER", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.12f))
+                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.20f))
+                    Text("LÍMITE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.21f))
                 }
                 Spacer(Modifier.height(8.dp))
                 datosRouter.clientes.forEach { c ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.28f))
-                        Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.35f))
-                        Text(c.interfaz, fontSize = 11.sp, modifier = Modifier.weight(0.15f))
-                        Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, modifier = Modifier.weight(0.22f))
+                        Text(c.ip, fontSize = 10.sp, modifier = Modifier.weight(0.22f))
+                        Text(c.mac, fontSize = 10.sp, modifier = Modifier.weight(0.25f))
+                        Text(c.interfaz, fontSize = 10.sp, modifier = Modifier.weight(0.12f))
+                        Text(c.nombre.ifBlank { "—" }, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.20f))
+                        Text(c.limiteVelocidad, fontSize = 10.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.21f))
                     }
                 }
             }

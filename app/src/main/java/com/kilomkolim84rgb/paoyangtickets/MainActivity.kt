@@ -65,7 +65,8 @@ data class ClienteLAN(
     val ip: String,
     val mac: String,
     val nombre: String = "",
-    val velocidadActual: String = "0 bps"
+    val velocidadBajada: String = "0 bps",
+    val velocidadSubida: String = "0 bps"
 )
 
 object MikrotikAPI {
@@ -184,28 +185,23 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ SIMPLE QUEUE — AVG-RATE = VELOCIDAD REAL
+            // ✅ SIMPLE QUEUE — AVG-RATE → BAJADA / SUBIDA
             // ==============================================
-            val simpleQueue = mutableMapOf<String, Pair<String, String>>() // IP -> (nombre, velocidad)
+            val simpleQueue = mutableMapOf<String, Triple<String, String, String>>() 
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
                     val nombre = q["name"] ?: ""
                     val target = q["target"] ?: ""
-                    val avgRateRaw = q["avg-rate"] ?: ""
+                    val avgRate = q["avg-rate"] ?: ""
                     
-                    // ✅ Formatear avg-rate limpio: "416.8 kbps" / "10.0 Mbps"
-                    val velocidad = when {
-                        avgRateRaw.isBlank() || avgRateRaw == "0" -> "0 bps"
-                        avgRateRaw.contains("/") -> {
-                            val partes = avgRateRaw.split("/")
-                            partes.firstOrNull()?.trim() ?: avgRateRaw
-                        }
-                        else -> avgRateRaw
-                    }
+                    // ✅ avg-rate viene así: "33.9 kbps 125.1 kbps" → BAJADA / SUBIDA
+                    val partesVel = avgRate.trim().split("\\s+".toRegex())
+                    val bajada = if (partesVel.size >= 2 && partesVel[0] != "0") "${partesVel[0]} ${partesVel[1]}" else "0 bps"
+                    val subida = if (partesVel.size >= 4 && partesVel[2] != "0") "${partesVel[2]} ${partesVel[3]}" else "0 bps"
                     
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
                     if (ipMatch != null && nombre.isNotEmpty()) {
-                        simpleQueue[ipMatch] = Pair(nombre, velocidad)
+                        simpleQueue[ipMatch] = Triple(nombre, bajada, subida)
                     }
                 }
             }
@@ -223,7 +219,7 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ CLIENTES CON VELOCIDAD EN TIEMPO REAL
+            // ✅ ARMAR CLIENTES CON BAJADA Y SUBIDA SEPARADAS
             // ==============================================
             val clientes = mutableListOf<ClienteLAN>()
             val ipsAgregadas = mutableSetOf<String>()
@@ -235,36 +231,36 @@ object MikrotikAPI {
                     val macCli = a["mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty()) return@forEach
 
-                    // Nombre: primero Simple Queue, luego ARP comment
-                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps")
+                    val (nombreQ, bajadaQ, subidaQ) = simpleQueue[ipCli] ?: Triple("", "0 bps", "0 bps")
                     val nombreFinal = nombreQ.ifBlank { arpNombres[ipCli] ?: "" }
-                    val velocidadFinal = if (velQ != "0 bps") velQ else "0 bps"
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
                         mac = macCli,
                         nombre = nombreFinal,
-                        velocidadActual = velocidadFinal
+                        velocidadBajada = bajadaQ,
+                        velocidadSubida = subidaQ
                     ))
                     ipsAgregadas.add(ipCli)
                 }
             }
 
-            // Leer DHCP Leases (complemento)
+            // Leer DHCP Leases
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
                 parsearListaJson(respDhcp).forEach { l ->
                     val ipCli = l["active-address"] ?: return@forEach
                     val macCli = l["active-mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
 
-                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps")
+                    val (nombreQ, bajadaQ, subidaQ) = simpleQueue[ipCli] ?: Triple("", "0 bps", "0 bps")
                     val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
                         mac = macCli,
                         nombre = nombreFinal,
-                        velocidadActual = velQ
+                        velocidadBajada = bajadaQ,
+                        velocidadSubida = subidaQ
                     ))
                     ipsAgregadas.add(ipCli)
                 }
@@ -503,7 +499,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — CON VELOCIDAD AVG-RATE ==============
+// ============== TABLA CLIENTES — BAJADA ↓ / SUBIDA ↑ ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -524,7 +520,7 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                     Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.20f))
                     Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
                     Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.23f))
-                    Text("VELOCIDAD", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
+                    Text("↓ BAJADA / ↑ SUBIDA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
                 }
                 Spacer(Modifier.height(8.dp))
                 datosRouter.clientes.forEach { c ->
@@ -532,7 +528,10 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                         Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.20f))
                         Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.22f))
                         Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.23f))
-                        Text(c.velocidadActual, fontSize = 11.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.35f))
+                        Text("${c.velocidadBajada} ↓ / ${c.velocidadSubida} ↑", 
+                             fontSize = 10.sp, 
+                             color = Color(0xFF22C55E), 
+                             modifier = Modifier.weight(0.35f))
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFFE0E0E0))
                 }

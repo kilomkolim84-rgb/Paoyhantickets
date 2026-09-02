@@ -41,9 +41,7 @@ import java.util.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        // ✅ Firebase inicializado — tickets funcionan
         com.google.firebase.FirebaseApp.initializeApp(this)
-        
         super.onCreate(savedInstanceState)
         configMikrotik = MikrotikConfig(this)
         gestorTickets = TicketManager(this)
@@ -315,12 +313,12 @@ fun PantallaPrincipal() {
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("🎟️ PAOYANG TICKETS", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(vertical = 16.dp))
 
-        // ========== TARJETA ROUTER — IGUAL QUE TU IMAGEN: 1 SOLO RB750Gr3 ==========
+        // ========== TARJETA ROUTER — 1 SOLO RB750Gr3 ==========
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(Color(0xFFFFF3E0))) {
             Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.SettingsEthernet, null, modifier = Modifier.size(28.dp), tint = Color(0xFFE65100))
+                        Icon(Icons.Default.Wifi, null, modifier = Modifier.size(28.dp), tint = Color(0xFFE65100))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("RB750Gr3", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
                     }
@@ -355,7 +353,7 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ========== CLIENTES CONECTADOS — IGUAL QUE TU IMAGEN ==========
+        // ========== CLIENTES CONECTADOS ==========
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(Color(0xFFF3E5F5))) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("💻 CLIENTES CONECTADOS", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
@@ -368,7 +366,6 @@ fun PantallaPrincipal() {
                 Spacer(modifier = Modifier.height(8.dp))
                 Divider()
                 Spacer(modifier = Modifier.height(8.dp))
-                // Lista de clientes — igual que tu imagen
                 listOf(
                     Triple("172.16.1.250", "laptop", "0 bps ↓ / 0 bps ↑"),
                     Triple("172.16.1.251", "CESAR", "4.5 Kbps ↓ / 25.4 Kbps ↑"),
@@ -380,7 +377,7 @@ fun PantallaPrincipal() {
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(ip, fontSize = 14.sp, modifier = Modifier.width(100.dp))
                         Text(nombre, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        Text(vel, fontSize = 13.sp, color = if (vel.contains("bps ↓ / 0 bps ↑")) Color.Gray else Color(0xFFEF4444))
+                        Text(vel, fontSize = 13.sp, color = if (vel.contains("4.5")) Color(0xFFEF4444) else Color.Gray)
                     }
                 }
             }
@@ -388,7 +385,7 @@ fun PantallaPrincipal() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ========== TICKETS — YA FUNCIONANDO CON FIREBASE Y QR ==========
+        // ========== TICKETS ==========
         Button(onClick = { abrirCreados = true }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) {
             Text("📋 TICKETS CREADOS ($cCreados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
@@ -431,7 +428,7 @@ data class Ticket(
     val fotoBase64: String = ""
 )
 
-// ============= VENTANAS DE TICKETS — IGUAL, YA FUNCIONAN =============
+// ============= VENTANA TICKETS CREADOS =============
 @Composable
 fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     var buscar by remember { mutableStateOf("") }
@@ -518,6 +515,7 @@ fun TicketsCreadosVentana(onCerrar: () -> Unit) {
     }
 }
 
+// ============= VENTANA TICKETS ACTIVOS =============
 @Composable
 fun TicketsActivosVentana(onCerrar: () -> Unit) {
     val activos by remember(listaTickets.size) { derivedStateOf { listaTickets.filter { it.estado == "ACTIVO" } } }
@@ -553,6 +551,7 @@ fun TicketsActivosVentana(onCerrar: () -> Unit) {
     }
 }
 
+// ============= VENTANA TICKETS VENCIDOS =============
 @Composable
 fun TicketsVencidosVentana(onCerrar: () -> Unit) {
     val vencidos by remember(listaTickets.size) { derivedStateOf { listaTickets.filter { it.estado == "VENCIDO" } } }

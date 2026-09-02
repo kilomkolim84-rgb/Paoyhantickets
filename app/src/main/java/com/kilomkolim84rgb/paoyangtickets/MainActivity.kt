@@ -318,7 +318,7 @@ fun PantallaPrincipal() {
             Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Wifi, null, modifier = Modifier.size(28.dp), tint = Color(0xFFE65100))
+                        Icon(Icons.Default.Settings, null, modifier = Modifier.size(28.dp), tint = Color(0xFFE65100))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("RB750Gr3", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
                     }

@@ -55,8 +55,8 @@ data class DatosRouter(
     val conectado: Boolean = false,
     val cpu: Int = 0,
     val ram: Int = 0,
-    val bajadaEth1: String = "— Mbps",
-    val subidaEth1: String = "— Mbps",
+    val bajadaEth1: String = "— Kbps",
+    val subidaEth1: String = "— Kbps",
     val clientes: List<ClienteLAN> = emptyList(),
     val error: String = ""
 )
@@ -65,9 +65,7 @@ data class ClienteLAN(
     val ip: String,
     val mac: String,
     val nombre: String = "",
-    val bajadaActual: String = "—",
-    val subidaActual: String = "—",
-    val limite: String = "—"
+    val velocidadActual: String = "0 bps"
 )
 
 object MikrotikAPI {
@@ -75,9 +73,6 @@ object MikrotikAPI {
     private var ultimaRxEth1: Long = 0
     private var ultimaTxEth1: Long = 0
     private var ultimaMedicionEth1: Long = 0
-    private val ultimoRxCliente = mutableMapOf<String, Long>()
-    private val ultimoTxCliente = mutableMapOf<String, Long>()
-    private var ultimaMedicionClientes: Long = 0
 
     private suspend fun hacerPeticion(
         ip: String,
@@ -126,10 +121,10 @@ object MikrotikAPI {
     }
 
     // ==============================================
-    // ⚡ CALCULAR VELOCIDAD — FORMATO AUTOMÁTICO
+    // ⚡ CALCULAR VELOCIDAD — FORMATO LIMPIO
     // ==============================================
     private fun calcularVelocidad(bytesActual: Long, bytesAnterior: Long, tiempoMs: Long): String {
-        if (tiempoMs <= 0 || bytesAnterior == 0L || bytesActual < bytesAnterior) return "—"
+        if (tiempoMs <= 0 || bytesAnterior == 0L || bytesActual < bytesAnterior) return "— Kbps"
         val deltaBytes = bytesActual - bytesAnterior
         val bitsPorSegundo = deltaBytes * 8 * 1000 / tiempoMs
         return when {
@@ -167,8 +162,8 @@ object MikrotikAPI {
             // ==============================================
             // ✅ ETHER1 — SUBIDA Y BAJADA EN TIEMPO REAL
             // ==============================================
-            var bajadaEth1 = "— Mbps"
-            var subidaEth1 = "— Mbps"
+            var bajadaEth1 = "— Kbps"
+            var subidaEth1 = "— Kbps"
             hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
                 val interfaces = parsearListaJson(respIf)
                 val eth1 = interfaces.find { it["name"] == "ether1" }
@@ -189,17 +184,28 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ SIMPLE QUEUE — LÍMITES POR CLIENTE
+            // ✅ SIMPLE QUEUE — AVG-RATE = VELOCIDAD REAL
             // ==============================================
-            val simpleQueue = mutableMapOf<String, Triple<String, String, String>>() // IP -> (nombre, limite, target)
+            val simpleQueue = mutableMapOf<String, Pair<String, String>>() // IP -> (nombre, velocidad)
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
                     val nombre = q["name"] ?: ""
                     val target = q["target"] ?: ""
-                    val limite = q["max-limit"] ?: "—"
+                    val avgRateRaw = q["avg-rate"] ?: ""
+                    
+                    // ✅ Formatear avg-rate limpio: "416.8 kbps" / "10.0 Mbps"
+                    val velocidad = when {
+                        avgRateRaw.isBlank() || avgRateRaw == "0" -> "0 bps"
+                        avgRateRaw.contains("/") -> {
+                            val partes = avgRateRaw.split("/")
+                            partes.firstOrNull()?.trim() ?: avgRateRaw
+                        }
+                        else -> avgRateRaw
+                    }
+                    
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
-                    if (ipMatch != null) {
-                        simpleQueue[ipMatch] = Triple(nombre, limite, target)
+                    if (ipMatch != null && nombre.isNotEmpty()) {
+                        simpleQueue[ipMatch] = Pair(nombre, velocidad)
                     }
                 }
             }
@@ -217,12 +223,10 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ CLIENTES — VELOCIDAD EN TIEMPO REAL
+            // ✅ CLIENTES CON VELOCIDAD EN TIEMPO REAL
             // ==============================================
             val clientes = mutableListOf<ClienteLAN>()
             val ipsAgregadas = mutableSetOf<String>()
-            val ahoraClientes = System.currentTimeMillis()
-            val tiempoClientes = ahoraClientes - ultimaMedicionClientes
 
             // Leer ARP + Simple Queue
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
@@ -231,50 +235,40 @@ object MikrotikAPI {
                     val macCli = a["mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty()) return@forEach
 
-                    val (nombreQ, limiteQ, _) = simpleQueue[ipCli] ?: Triple("", "", "")
+                    // Nombre: primero Simple Queue, luego ARP comment
+                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps")
                     val nombreFinal = nombreQ.ifBlank { arpNombres[ipCli] ?: "" }
-
-                    // Velocidad actual por cliente (desde stats o estimada)
-                    val bajadaCli = if (ultimaMedicionClientes > 0L && tiempoClientes > 0L) {
-                        "—" // Se puede agregar lectura de stats por IP si se necesita
-                    } else "—"
-                    val subidaCli = bajadaCli
+                    val velocidadFinal = if (velQ != "0 bps") velQ else "0 bps"
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
                         mac = macCli,
                         nombre = nombreFinal,
-                        bajadaActual = bajadaCli,
-                        subidaActual = subidaCli,
-                        limite = limiteQ
+                        velocidadActual = velocidadFinal
                     ))
                     ipsAgregadas.add(ipCli)
                 }
             }
 
-            // Leer DHCP Leases
+            // Leer DHCP Leases (complemento)
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
                 parsearListaJson(respDhcp).forEach { l ->
                     val ipCli = l["active-address"] ?: return@forEach
                     val macCli = l["active-mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
 
-                    val (nombreQ, limiteQ, _) = simpleQueue[ipCli] ?: Triple("", "", "")
+                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps")
                     val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
                         mac = macCli,
                         nombre = nombreFinal,
-                        bajadaActual = "—",
-                        subidaActual = "—",
-                        limite = limiteQ
+                        velocidadActual = velQ
                     ))
                     ipsAgregadas.add(ipCli)
                 }
             }
-
-            ultimaMedicionClientes = ahoraClientes
 
             DatosRouter(
                 conectado = true,
@@ -509,7 +503,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — CON VELOCIDAD EN TIEMPO REAL ==============
+// ============== TABLA CLIENTES — CON VELOCIDAD AVG-RATE ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -530,7 +524,7 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                     Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.20f))
                     Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
                     Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.23f))
-                    Text("LÍMITE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
+                    Text("VELOCIDAD", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
                 }
                 Spacer(Modifier.height(8.dp))
                 datosRouter.clientes.forEach { c ->
@@ -538,7 +532,7 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                         Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.20f))
                         Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.22f))
                         Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.23f))
-                        Text(c.limite, fontSize = 11.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.35f))
+                        Text(c.velocidadActual, fontSize = 11.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.35f))
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFFE0E0E0))
                 }
@@ -576,7 +570,7 @@ fun PantallaPrincipal() {
             cargando = true
             datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)
             cargando = false
-            delay(2000) // ⚡ CADA 2 SEGUNDOS — EN TIEMPO REAL
+            delay(2000)
         }
     }
 

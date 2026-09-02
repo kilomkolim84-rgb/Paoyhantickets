@@ -49,15 +49,14 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
-// 📊 DATOS DEL ROUTER — RB750Gr3 con NOMBRES Y VELOCIDAD
+// 📊 DATOS DEL ROUTER — SIN TEMP, CON SUBIDA/BAJADA ETHER1
 // ==============================================
 data class DatosRouter(
     val conectado: Boolean = false,
     val cpu: Int = 0,
     val ram: Int = 0,
-    val temperatura: String = "—",
-    val subida: String = "— Mbps",
     val bajada: String = "— Mbps",
+    val subida: String = "— Mbps",
     val clientes: List<ClienteLAN> = emptyList(),
     val error: String = ""
 )
@@ -66,13 +65,14 @@ data class ClienteLAN(
     val ip: String,
     val mac: String,
     val nombre: String = "",
-    val interfaz: String = "",
-    val velocidadActual: String = "—",
-    val limiteVelocidad: String = "—"
+    val velocidadActual: String = "—"
 )
 
 object MikrotikAPI {
     var ultimoError = ""
+    private var ultimaRxEth1: Long = 0
+    private var ultimaTxEth1: Long = 0
+    private var ultimaMedicion: Long = 0
 
     private suspend fun hacerPeticion(
         ip: String,
@@ -120,10 +120,16 @@ object MikrotikAPI {
         return false
     }
 
-    private fun convertirBytesAMbps(bytes: Long, segundos: Long = 1): String {
-        val bitsPorSegundo = bytes * 8 / segundos
-        val mbps = bitsPorSegundo / 1_000_000.0
-        return "%.1f Mbps".format(mbps)
+    private fun calcularVelocidad(bytesActual: Long, bytesAnterior: Long, tiempoMs: Long): String {
+        if (tiempoMs <= 0 || bytesAnterior == 0L) return "—"
+        val deltaBytes = bytesActual - bytesAnterior
+        if (deltaBytes < 0) return "—"
+        val bitsPorSegundo = deltaBytes * 8 * 1000 / tiempoMs
+        return when {
+            bitsPorSegundo >= 1_000_000 -> "%.1f Mbps".format(bitsPorSegundo / 1_000_000.0)
+            bitsPorSegundo >= 1_000 -> "%.0f Kbps".format(bitsPorSegundo / 1_000.0)
+            else -> "$bitsPorSegundo bps"
+        }
     }
 
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
@@ -142,7 +148,6 @@ object MikrotikAPI {
 
             var cpu = 0
             var ram = 0
-            var temperatura = "—"
             try {
                 val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
                 map["cpu-load"]?.toIntOrNull()?.let { cpu = it }
@@ -150,20 +155,36 @@ object MikrotikAPI {
                     val total = map["total-memory"]?.toLongOrNull() ?: 1
                     ram = ((total - libre) * 100 / total).toInt()
                 }
-                map["temperature"]?.let { temperatura = "$it°C" }
-                if (temperatura == "—") map["board-temperature1"]?.let { temperatura = "$it°C" }
             } catch (e: Exception) {
                 ultimoError = "Error al leer recursos"
             }
 
+            // VELOCIDAD ETHER1 — SUBIDA Y BAJADA
+            var bajada = "— Mbps"
+            var subida = "— Mbps"
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/interface/ether1/statistics")?.let { respEth ->
+                val map = parsearJsonSimple(respEth.trim().removeSurrounding("[", "]"))
+                val rxBytes = map["rx-byte"]?.toLongOrNull() ?: 0L
+                val txBytes = map["tx-byte"]?.toLongOrNull() ?: 0L
+                val ahora = System.currentTimeMillis()
+                val tiempoTranscurrido = ahora - ultimaMedicion
+
+                if (ultimaMedicion > 0L && tiempoTranscurrido > 0L) {
+                    bajada = calcularVelocidad(rxBytes, ultimaRxEth1, tiempoTranscurrido)
+                    subida = calcularVelocidad(txBytes, ultimaTxEth1, tiempoTranscurrido)
+                }
+                ultimaRxEth1 = rxBytes
+                ultimaTxEth1 = txBytes
+                ultimaMedicion = ahora
+            }
+
             // LEER SIMPLE QUEUE — NOMBRES Y LÍMITES
-            val mapaQueue = mutableMapOf<String, Pair<String, String>>() // ip -> nombre, limite
+            val mapaQueue = mutableMapOf<String, Pair<String, String>>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQueue ->
                 parsearListaJson(respQueue).forEach { map ->
                     val nombre = map["name"] ?: ""
                     val objetivo = map["target"] ?: ""
                     val limite = map["max-limit"] ?: "—"
-                    // Extraer IP del objetivo (formato: 172.16.1.250/32)
                     val ipObjetivo = objetivo.split("/").firstOrNull() ?: ""
                     if (ipObjetivo.isNotEmpty() && nombre.isNotEmpty()) {
                         mapaQueue[ipObjetivo] = Pair(nombre, limite)
@@ -172,65 +193,38 @@ object MikrotikAPI {
             }
 
             // LEER ARP — COMENTARIOS
-            val mapaArpComment = mutableMapOf<String, String>() // ip -> comentario
+            val mapaArpComment = mutableMapOf<String, String>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
                 parsearListaJson(respArp).forEach { map ->
                     val ip = map["address"] ?: return@forEach
                     val comentario = map["comment"] ?: ""
-                    if (comentario.isNotEmpty()) {
-                        mapaArpComment[ip] = comentario
-                    }
+                    if (comentario.isNotEmpty()) mapaArpComment[ip] = comentario
                 }
             }
 
-            // LEER ARP COMPLETO + CRUZAR CON QUEUE Y COMENTARIOS
+            // CLIENTES — SIN COLUMNA ETHER, CON NOMBRE Y VELOCIDAD
             val clientes = mutableListOf<ClienteLAN>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
                 parsearListaJson(respArp).forEach { map ->
                     val ip = map["address"] ?: return@forEach
                     val mac = map["mac-address"] ?: return@forEach
-                    val interfaz = map["interface"] ?: "—"
-                    
-                    // NOMBRE: primero Simple Queue, luego comentario ARP, sino vacío
                     val nombreQueue = mapaQueue[ip]?.first ?: ""
                     val nombreComment = mapaArpComment[ip] ?: ""
                     val nombreFinal = nombreQueue.ifBlank { nombreComment }
-                    
-                    // LÍMITE DE VELOCIDAD del Simple Queue
-                    val limite = mapaQueue[ip]?.second ?: "—"
-
-                    clientes.add(ClienteLAN(
-                        ip = ip,
-                        mac = mac,
-                        nombre = nombreFinal,
-                        interfaz = interfaz,
-                        velocidadActual = "—",
-                        limiteVelocidad = limite
-                    ))
+                    clientes.add(ClienteLAN(ip = ip, mac = mac, nombre = nombreFinal, velocidadActual = "—"))
                 }
             }
 
-            // También leer leases DHCP por si faltan
+            // DHCP Leases
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
                 parsearListaJson(respDhcp).forEach { map ->
                     val ip = map["active-address"] ?: return@forEach
                     val mac = map["active-mac-address"] ?: return@forEach
-                    val interfaz = map["interface"] ?: "—"
-                    
-                    val nombreQueue = mapaQueue[ip]?.first ?: ""
-                    val nombreComment = map["comment"] ?: map["host-name"] ?: ""
-                    val nombreFinal = nombreQueue.ifBlank { nombreComment }
-                    val limite = mapaQueue[ip]?.second ?: "—"
-
                     if (clientes.none { it.ip == ip }) {
-                        clientes.add(ClienteLAN(
-                            ip = ip,
-                            mac = mac,
-                            nombre = nombreFinal,
-                            interfaz = interfaz,
-                            velocidadActual = "—",
-                            limiteVelocidad = limite
-                        ))
+                        val nombreQueue = mapaQueue[ip]?.first ?: ""
+                        val nombreComment = map["comment"] ?: map["host-name"] ?: ""
+                        val nombreFinal = nombreQueue.ifBlank { nombreComment }
+                        clientes.add(ClienteLAN(ip = ip, mac = mac, nombre = nombreFinal, velocidadActual = "—"))
                     }
                 }
             }
@@ -239,7 +233,8 @@ object MikrotikAPI {
                 conectado = true,
                 cpu = cpu,
                 ram = ram,
-                temperatura = temperatura,
+                bajada = bajada,
+                subida = subida,
                 clientes = clientes.distinctBy { it.ip }
             )
         }
@@ -274,7 +269,7 @@ object MikrotikAPI {
     }
 }
 
-// ============== CONFIGURACIÓN — SIMPLE, SIN ID ==============
+// ============== CONFIGURACIÓN ==============
 class MikrotikConfig(context: Context) {
     private val prefs = context.getSharedPreferences("mikrotik_config", Context.MODE_PRIVATE)
     data class Config(
@@ -300,7 +295,7 @@ class MikrotikConfig(context: Context) {
 }
 lateinit var configMikrotik: MikrotikConfig
 
-// ============== TICKET — IGUAL, SIN CAMBIOS ==============
+// ============== TICKET — SIN CAMBIOS ==============
 data class Ticket(
     val codigo: String = "",
     val monto: Float = 0f,
@@ -369,7 +364,7 @@ fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
     }
 }
 
-// ============== VENTANA CONFIG — SIMPLE, 1 SOLO ROUTER ==============
+// ============== VENTANA CONFIG ==============
 @Composable
 fun VentanaConfig(onCerrar: () -> Unit) {
     val contexto = androidx.compose.ui.platform.LocalContext.current
@@ -426,23 +421,15 @@ fun VentanaConfig(onCerrar: () -> Unit) {
                 Spacer(Modifier.height(20.dp))
 
                 mensajeEstado?.let {
-                    Text(
-                        it,
-                        fontSize = 14.sp,
-                        color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)
-                    )
+                    Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444))
                 }
                 Spacer(Modifier.height(12.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
                         onClick = {
-                            if (ip.isBlank()) {
-                                mensajeEstado = "❌ Ingrese la IP"
-                                return@Button
-                            }
-                            probando = true
-                            mensajeEstado = "🔄 Conectando..."
+                            if (ip.isBlank()) { mensajeEstado = "❌ Ingrese la IP"; return@Button }
+                            probando = true; mensajeEstado = "🔄 Conectando..."
                             CoroutineScope(Dispatchers.IO).launch {
                                 val ok = MikrotikAPI.probarConexion(ip, 8080, usuario, clave)
                                 withContext(Dispatchers.Main) {
@@ -453,32 +440,21 @@ fun VentanaConfig(onCerrar: () -> Unit) {
                         },
                         enabled = !probando,
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text(if (probando) "⏳" else "🧪 PROBAR")
-                    }
+                    ) { Text(if (probando) "⏳" else "🧪 PROBAR") }
 
                     Button(
                         onClick = {
-                            if (ip.isBlank()) {
-                                mensajeEstado = "❌ IP obligatoria"
-                                return@Button
-                            }
+                            if (ip.isBlank()) { mensajeEstado = "❌ IP obligatoria"; return@Button }
                             configMikrotik.guardar(MikrotikConfig.Config(ip, "8080", usuario, clave, dns))
                             mensajeEstado = "✅ Guardado"
                             Toast.makeText(contexto, "Guardado", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))
-                    ) {
-                        Text("💾 GUARDAR")
-                    }
+                    ) { Text("💾 GUARDAR") }
                 }
                 Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = onCerrar,
-                    Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(Color(0xFF818CF8))
-                ) {
+                Button(onClick = onCerrar, Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFF818CF8))) {
                     Text("CERRAR")
                 }
             }
@@ -486,7 +462,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== SECCIÓN CLIENTES — AHORA CON NOMBRE DEL SIMPLE QUEUE + LÍMITE ==============
+// ============== TABLA CLIENTES — SIN ETHER, CON VELOCIDAD ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -504,21 +480,20 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                 Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp)
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
-                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
-                    Text("ETHER", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.12f))
-                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.20f))
-                    Text("LÍMITE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.21f))
+                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
+                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.28f))
+                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
+                    Text("VELOCIDAD", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
                 }
                 Spacer(Modifier.height(8.dp))
                 datosRouter.clientes.forEach { c ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(c.ip, fontSize = 10.sp, modifier = Modifier.weight(0.22f))
-                        Text(c.mac, fontSize = 10.sp, modifier = Modifier.weight(0.25f))
-                        Text(c.interfaz, fontSize = 10.sp, modifier = Modifier.weight(0.12f))
-                        Text(c.nombre.ifBlank { "—" }, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.20f))
-                        Text(c.limiteVelocidad, fontSize = 10.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.21f))
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.25f))
+                        Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.28f))
+                        Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.25f))
+                        Text(c.velocidadActual, fontSize = 11.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.22f))
                     }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFFE0E0E0))
                 }
             }
         }
@@ -526,23 +501,16 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
 }
 
 @Composable
-fun BotonPestana(
-    texto: String,
-    colorFondo: Color,
-    modifier: Modifier = Modifier,
-    alPresionar: () -> Unit
-) {
+fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier, alPresionar: () -> Unit) {
     Button(
         onClick = alPresionar,
         modifier = modifier.height(55.dp),
         shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(containerColor = colorFondo)
-    ) {
-        Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-    }
+    ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL — SOLO RB750Gr3 ==============
+// ============== PANTALLA PRINCIPAL — SIN TEMP, CON SUBIDA/BAJADA ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -586,7 +554,7 @@ fun PantallaPrincipal() {
                 )
 
                 // ==============================
-                // 📡 SOLO RB750Gr3 — SIN OTROS ROUTERS
+                // 📡 TARJETA ROUTER — SIN TEMP, CON SUBIDA/BAJADA
                 // ==============================
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -635,8 +603,12 @@ fun PantallaPrincipal() {
                                     Text("${datosRouter.ram}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("🌡️ TEMP", fontSize = 13.sp, color = Color.Gray)
-                                    Text(datosRouter.temperatura, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                    Text("↓ BAJADA", fontSize = 13.sp, color = Color.Gray)
+                                    Text(datosRouter.bajada, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("↑ SUBIDA", fontSize = 13.sp, color = Color.Gray)
+                                    Text(datosRouter.subida, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
                                 }
                             }
                         }

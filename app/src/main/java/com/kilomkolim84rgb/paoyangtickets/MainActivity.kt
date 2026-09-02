@@ -281,33 +281,76 @@ fun PantallaPrincipal() {
         }
     }
 
-    // Dialog Config MikroTik
+    // ✅ DIÁLOGO CONFIGURACIÓN — CORREGIDO LOS OUTLINEDTEXTFIELD
     if (abrirCfg) Dialog(onDismissRequest = { abrirCfg = false }) {
-        var cfg = remember { config.cargar() }
-        var ip by remember { mutableStateOf(cfg.ip) }
-        var puerto by remember { mutableStateOf(cfg.puerto) }
-        var usuario by remember { mutableStateOf(cfg.usuario) }
-        var clave by remember { mutableStateOf(cfg.clave) }
+        var ip by remember { mutableStateOf(config.cargar().ip) }
+        var puerto by remember { mutableStateOf(config.cargar().puerto) }
+        var usuario by remember { mutableStateOf(config.cargar().usuario) }
+        var clave by remember { mutableStateOf(config.cargar().clave) }
 
-        Card(Modifier.fillMaxWidth().padding(20.dp), shape = RoundedCornerShape(20.dp)) {
+        Card(
+            Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            shape = RoundedCornerShape(20.dp)
+        ) {
             Column(Modifier.padding(24.dp)) {
                 Text("⚙️ Configurar MikroTik", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(16.dp))
-                OutlinedTextField(ip, { ip = it }, label = { Text("IP") }, Modifier.fillMaxWidth(), singleLine = true)
+                
+                // ✅ TODOS CORREGIDOS: firma correcta (String, String)
+                OutlinedTextField(
+                    value = ip,
+                    onValueChange = { nuevoValor -> ip = nuevoValor },
+                    label = { Text("IP") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(puerto, { puerto = it }, label = { Text("Puerto API") }, Modifier.fillMaxWidth(), singleLine = true)
+                
+                OutlinedTextField(
+                    value = puerto,
+                    onValueChange = { nuevoValor -> puerto = nuevoValor },
+                    label = { Text("Puerto API") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(usuario, { usuario = it }, label = { Text("Usuario") }, Modifier.fillMaxWidth(), singleLine = true)
+                
+                OutlinedTextField(
+                    value = usuario,
+                    onValueChange = { nuevoValor -> usuario = nuevoValor },
+                    label = { Text("Usuario") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(clave, { clave = it }, label = { Text("Contraseña") }, Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                
+                OutlinedTextField(
+                    value = clave,
+                    onValueChange = { nuevoValor -> clave = nuevoValor },
+                    label = { Text("Contraseña") },
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        config.guardar(MikrotikConfig.Config(ip, puerto, usuario, clave))
-                        conectarMikrotik(MikrotikConfig.Config(ip, puerto, usuario, clave))
-                        abrirCfg = false
-                    }, Modifier.weight(1f)) { Text("💾 Guardar y Conectar") }
-                    Button(onClick = { abrirCfg = false }, Modifier.weight(1f), colors = ButtonDefaults.buttonColors(Color(0xFF888888))) { Text("Cancelar") }
+                    Button(
+                        onClick = {
+                            config.guardar(MikrotikConfig.Config(ip, puerto, usuario, clave))
+                            conectarMikrotik(MikrotikConfig.Config(ip, puerto, usuario, clave))
+                            abrirCfg = false
+                        },
+                        Modifier.weight(1f)
+                    ) { Text("💾 Guardar y Conectar") }
+                    
+                    Button(
+                        onClick = { abrirCfg = false },
+                        Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(Color(0xFF888888))
+                    ) { Text("Cancelar") }
                 }
             }
         }

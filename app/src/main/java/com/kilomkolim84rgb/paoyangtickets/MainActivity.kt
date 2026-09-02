@@ -493,7 +493,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — SIN MAC, IP / NOMBRE / VELOCIDAD ==============
+// ============== TABLA CLIENTES ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -545,7 +545,8 @@ fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier
     ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL — SIN PullRefresh, COMPATIBLE ==============
+// ============== PANTALLA PRINCIPAL — JALANDO HACIA ABAJO ==============
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -575,120 +576,124 @@ fun PantallaPrincipal() {
     val activos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
     val vencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
+    // ✅ PULL-TO-REFRESH — JALANDO HACIA ABAJO
+    val refreshState = rememberPullRefreshState(
+        refreshing = cargando,
+        onRefresh = {
+            CoroutineScope(Dispatchers.IO).launch {
+                cargarDatos()
+            }
+        }
+    )
+
     MaterialTheme {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF5F5F5))
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .pullRefresh(refreshState)  // ✅ Jala hacia abajo = actualiza
         ) {
-            Text(
-                "🎟️ PAOYHAN TICKETS",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF2C3E50),
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(Color(0xFFFFF3E0))
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())  // ✅ Scroll completo
+                    .background(Color(0xFFF5F5F5))
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "📡 RB750Gr3",
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1565C0)
-                        )
-                        IconButton(onClick = { abrirConfig = true }) {
-                            Icon(Icons.Default.Settings, "Configurar", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
-                        }
-                    }
+                Text(
+                    "🎟️ PAOYHAN TICKETS",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2C3E50),
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    if (config.ip.isBlank()) {
-                        Text("⚠️ Toca el ícono ⚙️ para configurar la IP", fontSize = 15.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                    } else if (!datosRouter.conectado) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🔄 Conectando...", fontSize = 15.sp, color = Color(0xFFE65100))
-                            if (cargando) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp).padding(start = 8.dp), strokeWidth = 2.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(Color(0xFFFFF3E0))
+                ) {
+                    Column(modifier = Modifier.padding(24.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "📡 RB750Gr3",
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1565C0)
+                            )
+                            IconButton(onClick = { abrirConfig = true }) {
+                                Icon(Icons.Default.Settings, "Configurar", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
                             }
                         }
-                    } else {
-                        Text("🌐 IP: ${config.ip}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
+
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("💻 CPU", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text("${datosRouter.cpu}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        if (config.ip.isBlank()) {
+                            Text("⚠️ Toca el ícono ⚙️ para configurar la IP", fontSize = 15.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                        } else if (!datosRouter.conectado) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🔄 Conectando...", fontSize = 15.sp, color = Color(0xFFE65100))
+                                if (cargando) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp).padding(start = 8.dp), strokeWidth = 2.dp)
+                                }
                             }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("💾 RAM", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text("${datosRouter.ram}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("↓ BAJADA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("↑ SUBIDA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
+                        } else {
+                            Text("🌐 IP: ${config.ip}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("💻 CPU", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                    Text("${datosRouter.cpu}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("💾 RAM", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                    Text("${datosRouter.ram}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("↓ BAJADA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                    Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("↑ SUBIDA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                    Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(20.dp))
+                SeccionClientesLAN(datosRouter = datosRouter)
 
-            Button(
-                onClick = {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        cargarDatos()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
-            ) {
-                if (cargando) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = androidx.compose.ui.graphics.Color.White, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { abrirCreados = true },
+                    modifier = Modifier.fillMaxWidth().height(70.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
+                ) {
+                    Text("📋 TICKETS CREADOS ($creados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
-                Text(if (cargando) "CARGANDO..." else "🔄 ACTUALIZAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BotonPestana("🟢 ACTIVOS ($activos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
+                    BotonPestana("🔴 VENCIDOS ($vencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
+                }
+
+                Spacer(modifier = Modifier.height(40.dp))
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-            SeccionClientesLAN(datosRouter = datosRouter)
-
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = { abrirCreados = true },
-                modifier = Modifier.fillMaxWidth().height(70.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
-            ) {
-                Text("📋 TICKETS CREADOS ($creados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BotonPestana("🟢 ACTIVOS ($activos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
-                BotonPestana("🔴 VENCIDOS ($vencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
-            }
-
-            Spacer(modifier = Modifier.height(40.dp))
+            PullRefreshIndicator(
+                refreshing = cargando,
+                state = refreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
 
         if (abrirConfig) VentanaConfig { abrirConfig = false }

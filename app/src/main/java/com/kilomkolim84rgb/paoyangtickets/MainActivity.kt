@@ -133,7 +133,7 @@ object MikrotikAPI {
     }
 
     // ==============================================
-    // 🔄 OBTENER TODO — LEER CAMPO "rate" DIRECTO DE SIMPLE QUEUE
+    // 🔄 OBTENER TODO — LEER CAMPO "rate"
     // ==============================================
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
@@ -157,7 +157,7 @@ object MikrotikAPI {
                 }
             } catch (e: Exception) {}
 
-            // ✅ ETHER1 — SUBIDA Y BAJADA
+            // ✅ ETHER1
             var bajadaEth1 = "— Kbps"
             var subidaEth1 = "— Kbps"
             hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
@@ -179,21 +179,18 @@ object MikrotikAPI {
                 }
             }
 
-            // ==============================================
-            // ✅ SIMPLE QUEUE — LEER CAMPO "rate" = VELOCIDAD EN VIVO
-            // ==============================================
-            val simpleQueue = mutableMapOf<String, Pair<String, String>>() // IP -> (nombre, rate)
+            // ✅ SIMPLE QUEUE — CAMPO "rate"
+            val simpleQueue = mutableMapOf<String, Pair<String, String>>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
                     val nombre = q["name"] ?: ""
                     val target = q["target"] ?: ""
-                    val rateRaw = q["rate"] ?: ""  // ⭐ ESTE ES EL CORRECTO — NO avg-rate
-                    
-                    // Rate viene así: "2816/108800" → bits por segundo (bajada/subida)
+                    val rateRaw = q["rate"] ?: ""
+
                     val partes = rateRaw.trim().split("/")
                     val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
                     val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
-                    
+
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
                     if (ipMatch != null && nombre.isNotEmpty()) {
                         simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
@@ -201,7 +198,7 @@ object MikrotikAPI {
                 }
             }
 
-            // ✅ ARP — NOMBRES DESDE COMENTARIOS
+            // ✅ ARP
             val arpNombres = mutableMapOf<String, String>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
                 parsearListaJson(respArp).forEach { a ->
@@ -211,9 +208,7 @@ object MikrotikAPI {
                 }
             }
 
-            // ==============================================
-            // ✅ ARMAR LISTA DE CLIENTES CON VELOCIDAD EN VIVO
-            // ==============================================
+            // ✅ CLIENTES
             val clientes = mutableListOf<ClienteLAN>()
             val ipsAgregadas = mutableSetOf<String>()
 
@@ -238,7 +233,6 @@ object MikrotikAPI {
                 }
             }
 
-            // DHCP Leases
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
                 parsearListaJson(respDhcp).forEach { l ->
                     val ipCli = l["active-address"] ?: return@forEach
@@ -271,7 +265,6 @@ object MikrotikAPI {
         }
     }
 
-    // ⭐ CONVERTIR bits/s A FORMATO LEGIBLE
     private fun formatearTasa(bitsPorSegundo: Long): String {
         return when {
             bitsPorSegundo >= 1_000_000 -> "%.1f Mbps".format(bitsPorSegundo / 1_000_000.0)
@@ -508,7 +501,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — VELOCIDAD EN VIVO DESDE CAMPO "rate" ==============
+// ============== TABLA CLIENTES — SIN MAC, IP / NOMBRE / VELOCIDAD ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -526,21 +519,22 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                 Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp)
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.20f))
-                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
-                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.23f))
-                    Text("↓ BAJADA / ↑ SUBIDA", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
+                    Text("IP", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.28f))
+                    Text("NOMBRE", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.28f))
+                    Text("↓ BAJADA / ↑ SUBIDA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.44f))
                 }
                 Spacer(Modifier.height(8.dp))
                 datosRouter.clientes.forEach { c ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.20f))
-                        Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.22f))
-                        Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.23f))
-                        Text("${c.velocidadBajada} ↓ / ${c.velocidadSubida} ↑", 
-                             fontSize = 10.sp, 
-                             color = Color(0xFF22C55E), 
-                             modifier = Modifier.weight(0.35f))
+                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(c.ip, fontSize = 12.sp, modifier = Modifier.weight(0.28f))
+                        Text(c.nombre.ifBlank { "—" }, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.28f))
+                        Text(
+                            "${c.velocidadBajada} ↓ / ${c.velocidadSubida} ↑",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFD32F2F),
+                            modifier = Modifier.weight(0.44f)
+                        )
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFFE0E0E0))
                 }
@@ -559,7 +553,7 @@ fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier
     ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL ==============
+// ============== PANTALLA PRINCIPAL — PULL-TO-REFRESH ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -568,16 +562,23 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var datosRouter by remember { mutableStateOf(DatosRouter()) }
     var cargando by remember { mutableStateOf(false) }
+    var refrescando by remember { mutableStateOf(false) }
 
     val config = remember { configMikrotik.cargar() }
 
-    // ⚡ ACTUALIZACIÓN CADA 2 SEGUNDOS
+    val cargarDatos = suspend {
+        cargando = true
+        refrescando = true
+        datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)
+        cargando = false
+        refrescando = false
+    }
+
+    // ⚡ CARGA AUTOMÁTICA CADA 2 SEGUNDOS
     LaunchedEffect(config.ip) {
         if (config.ip.isBlank()) return@LaunchedEffect
         while (isActive) {
-            cargando = true
-            datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)
-            cargando = false
+            cargarDatos()
             delay(2000)
         }
     }
@@ -587,11 +588,20 @@ fun PantallaPrincipal() {
     val vencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
     MaterialTheme {
+        val estadoDesplazamiento = rememberPullRefreshState(
+            refreshing = refrescando,
+            onRefresh = {
+                CoroutineScope(Dispatchers.IO).launch {
+                    cargarDatos()
+                }
+            }
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFFF5F5F5))
-                .verticalScroll(rememberScrollState())
+                .pullRefresh(estadoDesplazamiento)
                 .padding(16.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -683,6 +693,12 @@ fun PantallaPrincipal() {
 
                 Spacer(modifier = Modifier.height(40.dp))
             }
+
+            PullRefreshIndicator(
+                refreshing = refrescando,
+                state = estadoDesplazamiento,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
 
         if (abrirConfig) VentanaConfig { abrirConfig = false }

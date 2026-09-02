@@ -16,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+// ✅ CORRECTOS para BOM 2024.02.00 — TODOS en material3:
+import androidx.compose.material3.rememberPullRefreshState
+import androidx.compose.material3.pullRefresh
+import androidx.compose.material3.PullRefreshIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,10 +30,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-// ✅ IMPORTS DE PULL-TO-REFRESH QUE FALTABAN
-import androidx.compose.foundation.rememberPullRefreshState
-import androidx.compose.foundation.pullRefresh
-import androidx.compose.material3.PullRefreshIndicator
 import com.google.firebase.database.FirebaseDatabase
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter

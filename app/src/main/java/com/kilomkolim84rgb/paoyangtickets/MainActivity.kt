@@ -16,10 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-// ✅ CORRECTOS para BOM 2024.02.00 — TODOS en material3:
-import androidx.compose.material3.rememberPullRefreshState
-import androidx.compose.material3.pullRefresh
-import androidx.compose.material3.PullRefreshIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -136,9 +132,6 @@ object MikrotikAPI {
         }
     }
 
-    // ==============================================
-    // 🔄 OBTENER TODO — LEER CAMPO "rate"
-    // ==============================================
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
         return withContext(Dispatchers.IO) {
@@ -150,7 +143,6 @@ object MikrotikAPI {
             }
             if (respuesta == null) return@withContext DatosRouter(conectado = false, error = ultimoError)
 
-            // ✅ CPU y RAM
             var cpu = 0; var ram = 0
             try {
                 val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
@@ -161,7 +153,6 @@ object MikrotikAPI {
                 }
             } catch (e: Exception) {}
 
-            // ✅ ETHER1
             var bajadaEth1 = "— Kbps"
             var subidaEth1 = "— Kbps"
             hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
@@ -183,7 +174,6 @@ object MikrotikAPI {
                 }
             }
 
-            // ✅ SIMPLE QUEUE — CAMPO "rate"
             val simpleQueue = mutableMapOf<String, Pair<String, String>>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
@@ -202,7 +192,6 @@ object MikrotikAPI {
                 }
             }
 
-            // ✅ ARP
             val arpNombres = mutableMapOf<String, String>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
                 parsearListaJson(respArp).forEach { a ->
@@ -212,7 +201,6 @@ object MikrotikAPI {
                 }
             }
 
-            // ✅ CLIENTES
             val clientes = mutableListOf<ClienteLAN>()
             val ipsAgregadas = mutableSetOf<String>()
 
@@ -518,9 +506,9 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
             Spacer(Modifier.height(12.dp))
 
             if (!datosRouter.conectado) {
-                Text("⚠️ Conecta al router para ver clientes", color = Color.Gray, fontSize = 14.sp)
+                Text("⚠️ Conecta al router para ver clientes", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 14.sp)
             } else if (datosRouter.clientes.isEmpty()) {
-                Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp)
+                Text("📭 Sin clientes conectados", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 14.sp)
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("IP", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.28f))
@@ -540,7 +528,7 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                             modifier = Modifier.weight(0.44f)
                         )
                     }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFFE0E0E0))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = androidx.compose.ui.graphics.Color(0xFFE0E0E0))
                 }
             }
         }
@@ -557,7 +545,7 @@ fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier
     ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL — PULL-TO-REFRESH ==============
+// ============== PANTALLA PRINCIPAL — SIN PullRefresh, COMPATIBLE ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -566,19 +554,15 @@ fun PantallaPrincipal() {
     var abrirVencidos by remember { mutableStateOf(false) }
     var datosRouter by remember { mutableStateOf(DatosRouter()) }
     var cargando by remember { mutableStateOf(false) }
-    var refrescando by remember { mutableStateOf(false) }
 
     val config = remember { configMikrotik.cargar() }
 
     val cargarDatos = suspend {
         cargando = true
-        refrescando = true
         datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)
         cargando = false
-        refrescando = false
     }
 
-    // ⚡ CARGA AUTOMÁTICA CADA 2 SEGUNDOS
     LaunchedEffect(config.ip) {
         if (config.ip.isBlank()) return@LaunchedEffect
         while (isActive) {
@@ -592,119 +576,119 @@ fun PantallaPrincipal() {
     val vencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
     MaterialTheme {
-        // ✅ PULL-TO-REFRESH — AHORA SÍ RECONOCIDO
-        val estadoDesplazamiento = rememberPullRefreshState(
-            refreshing = refrescando,
-            onRefresh = {
-                CoroutineScope(Dispatchers.IO).launch {
-                    cargarDatos()
-                }
-            }
-        )
-
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFFF5F5F5))
-                .pullRefresh(estadoDesplazamiento)
-                .padding(16.dp)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "🎟️ PAOYHAN TICKETS",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2C3E50),
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
+            Text(
+                "🎟️ PAOYHAN TICKETS",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2C3E50),
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(Color(0xFFFFF3E0))
-                ) {
-                    Column(modifier = Modifier.padding(24.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "📡 RB750Gr3",
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1565C0)
-                            )
-                            IconButton(onClick = { abrirConfig = true }) {
-                                Icon(Icons.Default.Settings, "Configurar", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(Color(0xFFFFF3E0))
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "📡 RB750Gr3",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1565C0)
+                        )
+                        IconButton(onClick = { abrirConfig = true }) {
+                            Icon(Icons.Default.Settings, "Configurar", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (config.ip.isBlank()) {
+                        Text("⚠️ Toca el ícono ⚙️ para configurar la IP", fontSize = 15.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                    } else if (!datosRouter.conectado) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔄 Conectando...", fontSize = 15.sp, color = Color(0xFFE65100))
+                            if (cargando) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp).padding(start = 8.dp), strokeWidth = 2.dp)
                             }
                         }
-
+                    } else {
+                        Text("🌐 IP: ${config.ip}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        if (config.ip.isBlank()) {
-                            Text("⚠️ Toca el ícono ⚙️ para configurar la IP", fontSize = 15.sp, color = Color.Gray)
-                        } else if (!datosRouter.conectado) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("🔄 Conectando...", fontSize = 15.sp, color = Color(0xFFE65100))
-                                if (cargando) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp).padding(start = 8.dp), strokeWidth = 2.dp)
-                                }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("💻 CPU", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                Text("${datosRouter.cpu}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                             }
-                        } else {
-                            Text("🌐 IP: ${config.ip}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("💻 CPU", fontSize = 13.sp, color = Color.Gray)
-                                    Text("${datosRouter.cpu}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("💾 RAM", fontSize = 13.sp, color = Color.Gray)
-                                    Text("${datosRouter.ram}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("↓ BAJADA", fontSize = 13.sp, color = Color.Gray)
-                                    Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("↑ SUBIDA", fontSize = 13.sp, color = Color.Gray)
-                                    Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
-                                }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("💾 RAM", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                Text("${datosRouter.ram}%", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("↓ BAJADA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("↑ SUBIDA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
                             }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-                SeccionClientesLAN(datosRouter = datosRouter)
-
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = { abrirCreados = true },
-                    modifier = Modifier.fillMaxWidth().height(70.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
-                ) {
-                    Text("📋 TICKETS CREADOS ($creados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    BotonPestana("🟢 ACTIVOS ($activos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
-                    BotonPestana("🔴 VENCIDOS ($vencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
-                }
-
-                Spacer(modifier = Modifier.height(40.dp))
             }
 
-            // ✅ INDICADOR DE REFRESCO — ARRIBA DE TODO
-            PullRefreshIndicator(
-                refreshing = refrescando,
-                state = estadoDesplazamiento,
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        cargarDatos()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
+            ) {
+                if (cargando) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = androidx.compose.ui.graphics.Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (cargando) "CARGANDO..." else "🔄 ACTUALIZAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            SeccionClientesLAN(datosRouter = datosRouter)
+
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(
+                onClick = { abrirCreados = true },
+                modifier = Modifier.fillMaxWidth().height(70.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
+            ) {
+                Text("📋 TICKETS CREADOS ($creados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BotonPestana("🟢 ACTIVOS ($activos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
+                BotonPestana("🔴 VENCIDOS ($vencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
 
         if (abrirConfig) VentanaConfig { abrirConfig = false }

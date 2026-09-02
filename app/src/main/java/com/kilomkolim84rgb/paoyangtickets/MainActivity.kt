@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
-// 📊 DATOS DEL ROUTER — TODO EN TIEMPO REAL
+// 📊 DATOS DEL ROUTER
 // ==============================================
 data class DatosRouter(
     val conectado: Boolean = false,
@@ -68,53 +68,6 @@ data class ClienteLAN(
     val velocidadBajada: String = "0 bps",
     val velocidadSubida: String = "0 bps"
 )
-
-// ==============================================
-// 📈 SEGUIMIENTO DE TRÁFICO POR CLIENTE — PARA CÁLCULO EN VIVO
-// ==============================================
-object TraficoClientes {
-    data class UltimoTrafico(
-        val rxBytes: Long = 0L,
-        val txBytes: Long = 0L,
-        val tiempoMs: Long = 0L
-    )
-    val ultimoPorIP = mutableMapOf<String, UltimoTrafico>()
-
-    fun calcularVelocidad(ip: String, rxActual: Long, txActual: Long): Pair<String, String> {
-        val ahora = System.currentTimeMillis()
-        val anterior = ultimoPorIP[ip] ?: UltimoTrafico()
-        
-        if (anterior.tiempoMs == 0L || anterior.rxBytes == 0L || anterior.txBytes == 0L) {
-            ultimoPorIP[ip] = UltimoTrafico(rxActual, txActual, ahora)
-            return Pair("0 bps", "0 bps")
-        }
-        
-        val deltaTiempo = ahora - anterior.tiempoMs
-        if (deltaTiempo <= 0L) return Pair("0 bps", "0 bps")
-        
-        // BAJADA = RX, SUBIDA = TX
-        val deltaRx = maxOf(0L, rxActual - anterior.rxBytes)
-        val deltaTx = maxOf(0L, txActual - anterior.txBytes)
-        
-        val bajadaFormateada = formatearVelocidad(deltaRx, deltaTiempo)
-        val subidaFormateada = formatearVelocidad(deltaTx, deltaTiempo)
-        
-        ultimoPorIP[ip] = UltimoTrafico(rxActual, txActual, ahora)
-        return Pair(bajadaFormateada, subidaFormateada)
-    }
-    
-    private fun formatearVelocidad(deltaBytes: Long, tiempoMs: Long): String {
-        val bitsPorSegundo = if (tiempoMs > 0) (deltaBytes * 8 * 1000) / tiempoMs else 0L
-        return when {
-            bitsPorSegundo >= 1_000_000 -> "%.1f Mbps".format(bitsPorSegundo / 1_000_000.0)
-            bitsPorSegundo >= 1_000 -> "%.1f Kbps".format(bitsPorSegundo / 1_000.0)
-            bitsPorSegundo > 0 -> "$bitsPorSegundo bps"
-            else -> "0 bps"
-        }
-    }
-    
-    fun reiniciar() { ultimoPorIP.clear() }
-}
 
 object MikrotikAPI {
     var ultimoError = ""
@@ -180,7 +133,7 @@ object MikrotikAPI {
     }
 
     // ==============================================
-    // 🔄 OBTENER TODO — CADA 2 SEGUNDOS + VELOCIDAD EN VIVO POR CLIENTE
+    // 🔄 OBTENER TODO — LEER CAMPO "rate" DIRECTO DE SIMPLE QUEUE
     // ==============================================
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
@@ -227,19 +180,23 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ SIMPLE QUEUE — LEER BYTES PARA CALCULAR VELOCIDAD EN VIVO
+            // ✅ SIMPLE QUEUE — LEER CAMPO "rate" = VELOCIDAD EN VIVO
             // ==============================================
-            val simpleQueue = mutableMapOf<String, Pair<String, Pair<Long, Long>>>() // IP -> (nombre, (rx-bytes, tx-bytes))
+            val simpleQueue = mutableMapOf<String, Pair<String, String>>() // IP -> (nombre, rate)
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
                     val nombre = q["name"] ?: ""
                     val target = q["target"] ?: ""
-                    val rxBytes = q["rx-bytes"]?.toLongOrNull() ?: 0L
-                    val txBytes = q["tx-bytes"]?.toLongOrNull() ?: 0L
+                    val rateRaw = q["rate"] ?: ""  // ⭐ ESTE ES EL CORRECTO — NO avg-rate
+                    
+                    // Rate viene así: "2816/108800" → bits por segundo (bajada/subida)
+                    val partes = rateRaw.trim().split("/")
+                    val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
+                    val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
                     
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
                     if (ipMatch != null && nombre.isNotEmpty()) {
-                        simpleQueue[ipMatch] = Pair(nombre, Pair(rxBytes, txBytes))
+                        simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
                     }
                 }
             }
@@ -255,7 +212,7 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ CLIENTES CON VELOCIDAD EN VIVO — CALCULADA DE rx-bytes / tx-bytes
+            // ✅ ARMAR LISTA DE CLIENTES CON VELOCIDAD EN VIVO
             // ==============================================
             val clientes = mutableListOf<ClienteLAN>()
             val ipsAgregadas = mutableSetOf<String>()
@@ -266,11 +223,9 @@ object MikrotikAPI {
                     val macCli = a["mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty()) return@forEach
 
-                    val (nombreQ, bytesQ) = simpleQueue[ipCli] ?: Pair("", Pair(0L, 0L))
-                    val (rxBytes, txBytes) = bytesQ
-                    val (bajadaVel, subidaVel) = TraficoClientes.calcularVelocidad(ipCli, rxBytes, txBytes)
-                    
+                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps ↓ / 0 bps ↑")
                     val nombreFinal = nombreQ.ifBlank { arpNombres[ipCli] ?: "" }
+                    val (bajadaVel, subidaVel) = separarVelocidad(velQ)
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
@@ -290,11 +245,9 @@ object MikrotikAPI {
                     val macCli = l["active-mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
 
-                    val (nombreQ, bytesQ) = simpleQueue[ipCli] ?: Pair("", Pair(0L, 0L))
-                    val (rxBytes, txBytes) = bytesQ
-                    val (bajadaVel, subidaVel) = TraficoClientes.calcularVelocidad(ipCli, rxBytes, txBytes)
-                    
+                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps ↓ / 0 bps ↑")
                     val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
+                    val (bajadaVel, subidaVel) = separarVelocidad(velQ)
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
@@ -316,6 +269,21 @@ object MikrotikAPI {
                 clientes = clientes.distinctBy { it.ip }
             )
         }
+    }
+
+    // ⭐ CONVERTIR bits/s A FORMATO LEGIBLE
+    private fun formatearTasa(bitsPorSegundo: Long): String {
+        return when {
+            bitsPorSegundo >= 1_000_000 -> "%.1f Mbps".format(bitsPorSegundo / 1_000_000.0)
+            bitsPorSegundo >= 1_000 -> "%.1f Kbps".format(bitsPorSegundo / 1_000.0)
+            bitsPorSegundo > 0 -> "$bitsPorSegundo bps"
+            else -> "0 bps"
+        }
+    }
+
+    private fun separarVelocidad(texto: String): Pair<String, String> {
+        val partes = texto.split(" ↓ / ", " ↑")
+        return if (partes.size >= 2) Pair(partes[0], partes[1]) else Pair("0 bps", "0 bps")
     }
 
     private fun parsearJsonSimple(json: String): Map<String, String> {
@@ -540,7 +508,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — VELOCIDAD EN VIVO ↓ BAJADA / ↑ SUBIDA ==============
+// ============== TABLA CLIENTES — VELOCIDAD EN VIVO DESDE CAMPO "rate" ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -603,10 +571,9 @@ fun PantallaPrincipal() {
 
     val config = remember { configMikrotik.cargar() }
 
-    // ⚡ ACTUALIZACIÓN CADA 2 SEGUNDOS — VELOCIDAD EN VIVO
+    // ⚡ ACTUALIZACIÓN CADA 2 SEGUNDOS
     LaunchedEffect(config.ip) {
         if (config.ip.isBlank()) return@LaunchedEffect
-        TraficoClientes.reiniciar() // Reiniciar contadores al conectar
         while (isActive) {
             cargando = true
             datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)

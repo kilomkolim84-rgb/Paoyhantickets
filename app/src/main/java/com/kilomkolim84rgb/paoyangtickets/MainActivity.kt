@@ -69,6 +69,53 @@ data class ClienteLAN(
     val velocidadSubida: String = "0 bps"
 )
 
+// ==============================================
+// 📈 SEGUIMIENTO DE TRÁFICO POR CLIENTE — PARA CÁLCULO EN VIVO
+// ==============================================
+object TraficoClientes {
+    data class UltimoTrafico(
+        val rxBytes: Long = 0L,
+        val txBytes: Long = 0L,
+        val tiempoMs: Long = 0L
+    )
+    val ultimoPorIP = mutableMapOf<String, UltimoTrafico>()
+
+    fun calcularVelocidad(ip: String, rxActual: Long, txActual: Long): Pair<String, String> {
+        val ahora = System.currentTimeMillis()
+        val anterior = ultimoPorIP[ip] ?: UltimoTrafico()
+        
+        if (anterior.tiempoMs == 0L || anterior.rxBytes == 0L || anterior.txBytes == 0L) {
+            ultimoPorIP[ip] = UltimoTrafico(rxActual, txActual, ahora)
+            return Pair("0 bps", "0 bps")
+        }
+        
+        val deltaTiempo = ahora - anterior.tiempoMs
+        if (deltaTiempo <= 0L) return Pair("0 bps", "0 bps")
+        
+        // BAJADA = RX, SUBIDA = TX
+        val deltaRx = maxOf(0L, rxActual - anterior.rxBytes)
+        val deltaTx = maxOf(0L, txActual - anterior.txBytes)
+        
+        val bajadaFormateada = formatearVelocidad(deltaRx, deltaTiempo)
+        val subidaFormateada = formatearVelocidad(deltaTx, deltaTiempo)
+        
+        ultimoPorIP[ip] = UltimoTrafico(rxActual, txActual, ahora)
+        return Pair(bajadaFormateada, subidaFormateada)
+    }
+    
+    private fun formatearVelocidad(deltaBytes: Long, tiempoMs: Long): String {
+        val bitsPorSegundo = if (tiempoMs > 0) (deltaBytes * 8 * 1000) / tiempoMs else 0L
+        return when {
+            bitsPorSegundo >= 1_000_000 -> "%.1f Mbps".format(bitsPorSegundo / 1_000_000.0)
+            bitsPorSegundo >= 1_000 -> "%.1f Kbps".format(bitsPorSegundo / 1_000.0)
+            bitsPorSegundo > 0 -> "$bitsPorSegundo bps"
+            else -> "0 bps"
+        }
+    }
+    
+    fun reiniciar() { ultimoPorIP.clear() }
+}
+
 object MikrotikAPI {
     var ultimoError = ""
     private var ultimaRxEth1: Long = 0
@@ -121,9 +168,6 @@ object MikrotikAPI {
         return false
     }
 
-    // ==============================================
-    // ⚡ CALCULAR VELOCIDAD — FORMATO LIMPIO
-    // ==============================================
     private fun calcularVelocidad(bytesActual: Long, bytesAnterior: Long, tiempoMs: Long): String {
         if (tiempoMs <= 0 || bytesAnterior == 0L || bytesActual < bytesAnterior) return "— Kbps"
         val deltaBytes = bytesActual - bytesAnterior
@@ -136,7 +180,7 @@ object MikrotikAPI {
     }
 
     // ==============================================
-    // 🔄 OBTENER TODO — CADA 2 SEGUNDOS
+    // 🔄 OBTENER TODO — CADA 2 SEGUNDOS + VELOCIDAD EN VIVO POR CLIENTE
     // ==============================================
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
@@ -160,9 +204,7 @@ object MikrotikAPI {
                 }
             } catch (e: Exception) {}
 
-            // ==============================================
-            // ✅ ETHER1 — SUBIDA Y BAJADA EN TIEMPO REAL
-            // ==============================================
+            // ✅ ETHER1 — SUBIDA Y BAJADA
             var bajadaEth1 = "— Kbps"
             var subidaEth1 = "— Kbps"
             hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
@@ -185,30 +227,24 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ SIMPLE QUEUE — AVG-RATE → BAJADA / SUBIDA
+            // ✅ SIMPLE QUEUE — LEER BYTES PARA CALCULAR VELOCIDAD EN VIVO
             // ==============================================
-            val simpleQueue = mutableMapOf<String, Triple<String, String, String>>() 
+            val simpleQueue = mutableMapOf<String, Pair<String, Pair<Long, Long>>>() // IP -> (nombre, (rx-bytes, tx-bytes))
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
                     val nombre = q["name"] ?: ""
                     val target = q["target"] ?: ""
-                    val avgRate = q["avg-rate"] ?: ""
-                    
-                    // ✅ avg-rate viene así: "33.9 kbps 125.1 kbps" → BAJADA / SUBIDA
-                    val partesVel = avgRate.trim().split("\\s+".toRegex())
-                    val bajada = if (partesVel.size >= 2 && partesVel[0] != "0") "${partesVel[0]} ${partesVel[1]}" else "0 bps"
-                    val subida = if (partesVel.size >= 4 && partesVel[2] != "0") "${partesVel[2]} ${partesVel[3]}" else "0 bps"
+                    val rxBytes = q["rx-bytes"]?.toLongOrNull() ?: 0L
+                    val txBytes = q["tx-bytes"]?.toLongOrNull() ?: 0L
                     
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
                     if (ipMatch != null && nombre.isNotEmpty()) {
-                        simpleQueue[ipMatch] = Triple(nombre, bajada, subida)
+                        simpleQueue[ipMatch] = Pair(nombre, Pair(rxBytes, txBytes))
                     }
                 }
             }
 
-            // ==============================================
             // ✅ ARP — NOMBRES DESDE COMENTARIOS
-            // ==============================================
             val arpNombres = mutableMapOf<String, String>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
                 parsearListaJson(respArp).forEach { a ->
@@ -219,48 +255,53 @@ object MikrotikAPI {
             }
 
             // ==============================================
-            // ✅ ARMAR CLIENTES CON BAJADA Y SUBIDA SEPARADAS
+            // ✅ CLIENTES CON VELOCIDAD EN VIVO — CALCULADA DE rx-bytes / tx-bytes
             // ==============================================
             val clientes = mutableListOf<ClienteLAN>()
             val ipsAgregadas = mutableSetOf<String>()
 
-            // Leer ARP + Simple Queue
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
                 parsearListaJson(respArp).forEach { a ->
                     val ipCli = a["address"] ?: return@forEach
                     val macCli = a["mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty()) return@forEach
 
-                    val (nombreQ, bajadaQ, subidaQ) = simpleQueue[ipCli] ?: Triple("", "0 bps", "0 bps")
+                    val (nombreQ, bytesQ) = simpleQueue[ipCli] ?: Pair("", Pair(0L, 0L))
+                    val (rxBytes, txBytes) = bytesQ
+                    val (bajadaVel, subidaVel) = TraficoClientes.calcularVelocidad(ipCli, rxBytes, txBytes)
+                    
                     val nombreFinal = nombreQ.ifBlank { arpNombres[ipCli] ?: "" }
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
                         mac = macCli,
                         nombre = nombreFinal,
-                        velocidadBajada = bajadaQ,
-                        velocidadSubida = subidaQ
+                        velocidadBajada = bajadaVel,
+                        velocidadSubida = subidaVel
                     ))
                     ipsAgregadas.add(ipCli)
                 }
             }
 
-            // Leer DHCP Leases
+            // DHCP Leases
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
                 parsearListaJson(respDhcp).forEach { l ->
                     val ipCli = l["active-address"] ?: return@forEach
                     val macCli = l["active-mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
 
-                    val (nombreQ, bajadaQ, subidaQ) = simpleQueue[ipCli] ?: Triple("", "0 bps", "0 bps")
+                    val (nombreQ, bytesQ) = simpleQueue[ipCli] ?: Pair("", Pair(0L, 0L))
+                    val (rxBytes, txBytes) = bytesQ
+                    val (bajadaVel, subidaVel) = TraficoClientes.calcularVelocidad(ipCli, rxBytes, txBytes)
+                    
                     val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
 
                     clientes.add(ClienteLAN(
                         ip = ipCli,
                         mac = macCli,
                         nombre = nombreFinal,
-                        velocidadBajada = bajadaQ,
-                        velocidadSubida = subidaQ
+                        velocidadBajada = bajadaVel,
+                        velocidadSubida = subidaVel
                     ))
                     ipsAgregadas.add(ipCli)
                 }
@@ -499,7 +540,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — BAJADA ↓ / SUBIDA ↑ ==============
+// ============== TABLA CLIENTES — VELOCIDAD EN VIVO ↓ BAJADA / ↑ SUBIDA ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -550,7 +591,7 @@ fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier
     ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL — ACTUALIZACIÓN CADA 2 SEGUNDOS ==============
+// ============== PANTALLA PRINCIPAL ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -562,9 +603,10 @@ fun PantallaPrincipal() {
 
     val config = remember { configMikrotik.cargar() }
 
-    // ⚡ ACTUALIZACIÓN CADA 2 SEGUNDOS
+    // ⚡ ACTUALIZACIÓN CADA 2 SEGUNDOS — VELOCIDAD EN VIVO
     LaunchedEffect(config.ip) {
         if (config.ip.isBlank()) return@LaunchedEffect
+        TraficoClientes.reiniciar() // Reiniciar contadores al conectar
         while (isActive) {
             cargando = true
             datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)
@@ -594,9 +636,6 @@ fun PantallaPrincipal() {
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
 
-                // ==============================
-                // 📡 TARJETA ROUTER — ETHER1 EN VIVO
-                // ==============================
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),

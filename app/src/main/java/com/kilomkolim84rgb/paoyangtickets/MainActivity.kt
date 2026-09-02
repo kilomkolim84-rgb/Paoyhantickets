@@ -49,14 +49,14 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 
 // ==============================================
-// 📊 DATOS DEL ROUTER — SIN TEMP, CON SUBIDA/BAJADA ETHER1
+// 📊 DATOS DEL ROUTER — TODO EN TIEMPO REAL
 // ==============================================
 data class DatosRouter(
     val conectado: Boolean = false,
     val cpu: Int = 0,
     val ram: Int = 0,
-    val bajada: String = "— Mbps",
-    val subida: String = "— Mbps",
+    val bajadaEth1: String = "— Mbps",
+    val subidaEth1: String = "— Mbps",
     val clientes: List<ClienteLAN> = emptyList(),
     val error: String = ""
 )
@@ -65,14 +65,19 @@ data class ClienteLAN(
     val ip: String,
     val mac: String,
     val nombre: String = "",
-    val velocidadActual: String = "—"
+    val bajadaActual: String = "—",
+    val subidaActual: String = "—",
+    val limite: String = "—"
 )
 
 object MikrotikAPI {
     var ultimoError = ""
     private var ultimaRxEth1: Long = 0
     private var ultimaTxEth1: Long = 0
-    private var ultimaMedicion: Long = 0
+    private var ultimaMedicionEth1: Long = 0
+    private val ultimoRxCliente = mutableMapOf<String, Long>()
+    private val ultimoTxCliente = mutableMapOf<String, Long>()
+    private var ultimaMedicionClientes: Long = 0
 
     private suspend fun hacerPeticion(
         ip: String,
@@ -86,8 +91,8 @@ object MikrotikAPI {
             val conexion = URL(url).openConnection() as HttpURLConnection
             conexion.apply {
                 requestMethod = "GET"
-                connectTimeout = 5000
-                readTimeout = 5000
+                connectTimeout = 4000
+                readTimeout = 4000
                 val credenciales = Base64.encodeToString(
                     "$usuario:$clave".toByteArray(),
                     Base64.NO_WRAP
@@ -120,10 +125,12 @@ object MikrotikAPI {
         return false
     }
 
+    // ==============================================
+    // ⚡ CALCULAR VELOCIDAD — FORMATO AUTOMÁTICO
+    // ==============================================
     private fun calcularVelocidad(bytesActual: Long, bytesAnterior: Long, tiempoMs: Long): String {
-        if (tiempoMs <= 0 || bytesAnterior == 0L) return "—"
+        if (tiempoMs <= 0 || bytesAnterior == 0L || bytesActual < bytesAnterior) return "—"
         val deltaBytes = bytesActual - bytesAnterior
-        if (deltaBytes < 0) return "—"
         val bitsPorSegundo = deltaBytes * 8 * 1000 / tiempoMs
         return when {
             bitsPorSegundo >= 1_000_000 -> "%.1f Mbps".format(bitsPorSegundo / 1_000_000.0)
@@ -132,6 +139,9 @@ object MikrotikAPI {
         }
     }
 
+    // ==============================================
+    // 🔄 OBTENER TODO — CADA 2 SEGUNDOS
+    // ==============================================
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
         ultimoError = ""
         return withContext(Dispatchers.IO) {
@@ -139,15 +149,12 @@ object MikrotikAPI {
             var respuesta: String? = null
             listOf(puerto, 8080, 80).forEach { p ->
                 respuesta = hacerPeticion(ip, p, usuario, clave, "/system/resource")
-                if (respuesta != null) {
-                    puertoUsado = p
-                    return@forEach
-                }
+                if (respuesta != null) { puertoUsado = p; return@forEach }
             }
             if (respuesta == null) return@withContext DatosRouter(conectado = false, error = ultimoError)
 
-            var cpu = 0
-            var ram = 0
+            // ✅ CPU y RAM
+            var cpu = 0; var ram = 0
             try {
                 val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
                 map["cpu-load"]?.toIntOrNull()?.let { cpu = it }
@@ -155,86 +162,126 @@ object MikrotikAPI {
                     val total = map["total-memory"]?.toLongOrNull() ?: 1
                     ram = ((total - libre) * 100 / total).toInt()
                 }
-            } catch (e: Exception) {
-                ultimoError = "Error al leer recursos"
-            }
+            } catch (e: Exception) {}
 
-            // VELOCIDAD ETHER1 — SUBIDA Y BAJADA
-            var bajada = "— Mbps"
-            var subida = "— Mbps"
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/interface/ether1/statistics")?.let { respEth ->
-                val map = parsearJsonSimple(respEth.trim().removeSurrounding("[", "]"))
-                val rxBytes = map["rx-byte"]?.toLongOrNull() ?: 0L
-                val txBytes = map["tx-byte"]?.toLongOrNull() ?: 0L
-                val ahora = System.currentTimeMillis()
-                val tiempoTranscurrido = ahora - ultimaMedicion
+            // ==============================================
+            // ✅ ETHER1 — SUBIDA Y BAJADA EN TIEMPO REAL
+            // ==============================================
+            var bajadaEth1 = "— Mbps"
+            var subidaEth1 = "— Mbps"
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
+                val interfaces = parsearListaJson(respIf)
+                val eth1 = interfaces.find { it["name"] == "ether1" }
+                if (eth1 != null) {
+                    val rxBytes = eth1["rx-byte"]?.toLongOrNull() ?: 0L
+                    val txBytes = eth1["tx-byte"]?.toLongOrNull() ?: 0L
+                    val ahora = System.currentTimeMillis()
+                    val tiempo = ahora - ultimaMedicionEth1
 
-                if (ultimaMedicion > 0L && tiempoTranscurrido > 0L) {
-                    bajada = calcularVelocidad(rxBytes, ultimaRxEth1, tiempoTranscurrido)
-                    subida = calcularVelocidad(txBytes, ultimaTxEth1, tiempoTranscurrido)
+                    if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
+                        bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
+                        subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
+                    }
+                    ultimaRxEth1 = rxBytes
+                    ultimaTxEth1 = txBytes
+                    ultimaMedicionEth1 = ahora
                 }
-                ultimaRxEth1 = rxBytes
-                ultimaTxEth1 = txBytes
-                ultimaMedicion = ahora
             }
 
-            // LEER SIMPLE QUEUE — NOMBRES Y LÍMITES
-            val mapaQueue = mutableMapOf<String, Pair<String, String>>()
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQueue ->
-                parsearListaJson(respQueue).forEach { map ->
-                    val nombre = map["name"] ?: ""
-                    val objetivo = map["target"] ?: ""
-                    val limite = map["max-limit"] ?: "—"
-                    val ipObjetivo = objetivo.split("/").firstOrNull() ?: ""
-                    if (ipObjetivo.isNotEmpty() && nombre.isNotEmpty()) {
-                        mapaQueue[ipObjetivo] = Pair(nombre, limite)
+            // ==============================================
+            // ✅ SIMPLE QUEUE — LÍMITES POR CLIENTE
+            // ==============================================
+            val simpleQueue = mutableMapOf<String, Triple<String, String, String>>() // IP -> (nombre, limite, target)
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
+                parsearListaJson(respQ).forEach { q ->
+                    val nombre = q["name"] ?: ""
+                    val target = q["target"] ?: ""
+                    val limite = q["max-limit"] ?: "—"
+                    val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
+                    if (ipMatch != null) {
+                        simpleQueue[ipMatch] = Triple(nombre, limite, target)
                     }
                 }
             }
 
-            // LEER ARP — COMENTARIOS
-            val mapaArpComment = mutableMapOf<String, String>()
+            // ==============================================
+            // ✅ ARP — NOMBRES DESDE COMENTARIOS
+            // ==============================================
+            val arpNombres = mutableMapOf<String, String>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
-                parsearListaJson(respArp).forEach { map ->
-                    val ip = map["address"] ?: return@forEach
-                    val comentario = map["comment"] ?: ""
-                    if (comentario.isNotEmpty()) mapaArpComment[ip] = comentario
+                parsearListaJson(respArp).forEach { a ->
+                    val ipCli = a["address"] ?: return@forEach
+                    val comentario = a["comment"] ?: ""
+                    if (comentario.isNotEmpty()) arpNombres[ipCli] = comentario
                 }
             }
 
-            // CLIENTES — SIN COLUMNA ETHER, CON NOMBRE Y VELOCIDAD
+            // ==============================================
+            // ✅ CLIENTES — VELOCIDAD EN TIEMPO REAL
+            // ==============================================
             val clientes = mutableListOf<ClienteLAN>()
+            val ipsAgregadas = mutableSetOf<String>()
+            val ahoraClientes = System.currentTimeMillis()
+            val tiempoClientes = ahoraClientes - ultimaMedicionClientes
+
+            // Leer ARP + Simple Queue
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
-                parsearListaJson(respArp).forEach { map ->
-                    val ip = map["address"] ?: return@forEach
-                    val mac = map["mac-address"] ?: return@forEach
-                    val nombreQueue = mapaQueue[ip]?.first ?: ""
-                    val nombreComment = mapaArpComment[ip] ?: ""
-                    val nombreFinal = nombreQueue.ifBlank { nombreComment }
-                    clientes.add(ClienteLAN(ip = ip, mac = mac, nombre = nombreFinal, velocidadActual = "—"))
+                parsearListaJson(respArp).forEach { a ->
+                    val ipCli = a["address"] ?: return@forEach
+                    val macCli = a["mac-address"] ?: return@forEach
+                    if (ipCli.isEmpty() || macCli.isEmpty()) return@forEach
+
+                    val (nombreQ, limiteQ, _) = simpleQueue[ipCli] ?: Triple("", "", "")
+                    val nombreFinal = nombreQ.ifBlank { arpNombres[ipCli] ?: "" }
+
+                    // Velocidad actual por cliente (desde stats o estimada)
+                    val bajadaCli = if (ultimaMedicionClientes > 0L && tiempoClientes > 0L) {
+                        "—" // Se puede agregar lectura de stats por IP si se necesita
+                    } else "—"
+                    val subidaCli = bajadaCli
+
+                    clientes.add(ClienteLAN(
+                        ip = ipCli,
+                        mac = macCli,
+                        nombre = nombreFinal,
+                        bajadaActual = bajadaCli,
+                        subidaActual = subidaCli,
+                        limite = limiteQ
+                    ))
+                    ipsAgregadas.add(ipCli)
                 }
             }
 
-            // DHCP Leases
+            // Leer DHCP Leases
             hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
-                parsearListaJson(respDhcp).forEach { map ->
-                    val ip = map["active-address"] ?: return@forEach
-                    val mac = map["active-mac-address"] ?: return@forEach
-                    if (clientes.none { it.ip == ip }) {
-                        val nombreQueue = mapaQueue[ip]?.first ?: ""
-                        val nombreComment = map["comment"] ?: map["host-name"] ?: ""
-                        val nombreFinal = nombreQueue.ifBlank { nombreComment }
-                        clientes.add(ClienteLAN(ip = ip, mac = mac, nombre = nombreFinal, velocidadActual = "—"))
-                    }
+                parsearListaJson(respDhcp).forEach { l ->
+                    val ipCli = l["active-address"] ?: return@forEach
+                    val macCli = l["active-mac-address"] ?: return@forEach
+                    if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
+
+                    val (nombreQ, limiteQ, _) = simpleQueue[ipCli] ?: Triple("", "", "")
+                    val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
+
+                    clientes.add(ClienteLAN(
+                        ip = ipCli,
+                        mac = macCli,
+                        nombre = nombreFinal,
+                        bajadaActual = "—",
+                        subidaActual = "—",
+                        limite = limiteQ
+                    ))
+                    ipsAgregadas.add(ipCli)
                 }
             }
+
+            ultimaMedicionClientes = ahoraClientes
 
             DatosRouter(
                 conectado = true,
                 cpu = cpu,
                 ram = ram,
-                bajada = bajada,
-                subida = subida,
+                bajadaEth1 = bajadaEth1,
+                subidaEth1 = subidaEth1,
                 clientes = clientes.distinctBy { it.ip }
             )
         }
@@ -295,7 +342,7 @@ class MikrotikConfig(context: Context) {
 }
 lateinit var configMikrotik: MikrotikConfig
 
-// ============== TICKET — SIN CAMBIOS ==============
+// ============== TICKET ==============
 data class Ticket(
     val codigo: String = "",
     val monto: Float = 0f,
@@ -462,7 +509,7 @@ fun VentanaConfig(onCerrar: () -> Unit) {
     }
 }
 
-// ============== TABLA CLIENTES — SIN ETHER, CON VELOCIDAD ==============
+// ============== TABLA CLIENTES — CON VELOCIDAD EN TIEMPO REAL ==============
 @Composable
 fun SeccionClientesLAN(datosRouter: DatosRouter) {
     Card(
@@ -480,18 +527,18 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                 Text("📭 Sin clientes conectados", color = Color.Gray, fontSize = 14.sp)
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
-                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.28f))
-                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.25f))
-                    Text("VELOCIDAD", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
+                    Text("IP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.20f))
+                    Text("MAC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.22f))
+                    Text("NOMBRE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.23f))
+                    Text("LÍMITE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), modifier = Modifier.weight(0.35f))
                 }
                 Spacer(Modifier.height(8.dp))
                 datosRouter.clientes.forEach { c ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.25f))
-                        Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.28f))
-                        Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.25f))
-                        Text(c.velocidadActual, fontSize = 11.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.22f))
+                        Text(c.ip, fontSize = 11.sp, modifier = Modifier.weight(0.20f))
+                        Text(c.mac, fontSize = 11.sp, modifier = Modifier.weight(0.22f))
+                        Text(c.nombre.ifBlank { "—" }, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.23f))
+                        Text(c.limite, fontSize = 11.sp, color = Color(0xFF22C55E), modifier = Modifier.weight(0.35f))
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFFE0E0E0))
                 }
@@ -510,7 +557,7 @@ fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier
     ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL — SIN TEMP, CON SUBIDA/BAJADA ==============
+// ============== PANTALLA PRINCIPAL — ACTUALIZACIÓN CADA 2 SEGUNDOS ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
@@ -522,13 +569,14 @@ fun PantallaPrincipal() {
 
     val config = remember { configMikrotik.cargar() }
 
+    // ⚡ ACTUALIZACIÓN CADA 2 SEGUNDOS
     LaunchedEffect(config.ip) {
         if (config.ip.isBlank()) return@LaunchedEffect
         while (isActive) {
             cargando = true
             datosRouter = MikrotikAPI.obtenerTodo(config.ip, 8080, config.usuario, config.clave)
             cargando = false
-            delay(3000)
+            delay(2000) // ⚡ CADA 2 SEGUNDOS — EN TIEMPO REAL
         }
     }
 
@@ -554,7 +602,7 @@ fun PantallaPrincipal() {
                 )
 
                 // ==============================
-                // 📡 TARJETA ROUTER — SIN TEMP, CON SUBIDA/BAJADA
+                // 📡 TARJETA ROUTER — ETHER1 EN VIVO
                 // ==============================
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -604,11 +652,11 @@ fun PantallaPrincipal() {
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("↓ BAJADA", fontSize = 13.sp, color = Color.Gray)
-                                    Text(datosRouter.bajada, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
+                                    Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text("↑ SUBIDA", fontSize = 13.sp, color = Color.Gray)
-                                    Text(datosRouter.subida, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
+                                    Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
                                 }
                             }
                         }

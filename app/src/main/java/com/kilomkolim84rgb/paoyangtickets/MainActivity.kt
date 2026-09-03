@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
 // ==============================================
 val db = FirebaseDatabase.getInstance().reference
 val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+// Variables para calcular velocidad entre lecturas
+var velocidadAnteriorRx = 0L
+var velocidadAnteriorTx = 0L
 
 data class Ticket(
     val codigo: String = "",
@@ -140,13 +143,13 @@ class MikrotikConfig(context: Context) {
     private val prefs = context.getSharedPreferences("mikrotik_cfg", Context.MODE_PRIVATE)
     data class Config(
         val ip: String = "",
-        val puerto: String = "8728",
+        val puerto: String = "80",
         val usuario: String = "admin",
         val clave: String = ""
     )
     fun cargar(): Config = Config(
         prefs.getString("ip", "") ?: "",
-        prefs.getString("puerto", "8728") ?: "8728",
+        prefs.getString("puerto", "80") ?: "80",
         prefs.getString("usuario", "admin") ?: "admin",
         prefs.getString("clave", "") ?: ""
     )
@@ -201,25 +204,41 @@ fun leerDatosMikrotik(cfg: MikrotikConfig.Config) {
         }
         connSys.disconnect()
 
-        // Velocidades de interfaces
-        val urlIf = URL("http://${cfg.ip}:${cfg.puerto}/rest/interface/print")
-        val connIf = urlIf.openConnection() as HttpURLConnection
-        connIf.setRequestProperty("Authorization", auth)
-        connIf.connectTimeout = 4000
-        connIf.readTimeout = 4000
-        var subida = "— Mbps"
-        var bajada = "— Mbps"
-        if (connIf.responseCode == 200) {
-            val resp = BufferedReader(InputStreamReader(connIf.inputStream)).readText()
-            val ether1Rx = Regex("ether1[^}]*\"rx-byte\":\"?(\\d+)").find(resp)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-            val ether4Tx = Regex("ether4[^}]*\"tx-byte\":\"?(\\d+)").find(resp)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-            bajada = "${ether1Rx / 125000} Mbps"
-            subida = "${ether4Tx / 125000} Mbps"
-        }
-        connIf.disconnect()
+        // ✅ VELOCIDAD ETHER1 — SUBIDA / BAJADA EN TIEMPO REAL
+val urlIf = URL("http://${cfg.ip}:${cfg.puerto}/rest/interface/print")
+val connIf = urlIf.openConnection() as HttpURLConnection
+connIf.setRequestProperty("Authorization", auth)
+connIf.connectTimeout = 4000
+connIf.readTimeout = 4000
+var subida = "— Mbps"
+var bajada = "— Mbps"
+if (connIf.responseCode == 200) {
+    val resp = BufferedReader(InputStreamReader(connIf.inputStream)).readText()
+    // Busca ether1 — rx = bajada, tx = subida
+    val ether1Rx = Regex(""""name":"ether1"[^}]*"rx-byte":"?(\d+)""").find(resp)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+    val ether1Tx = Regex(""""name":"ether1"[^}]*"tx-byte":"?(\d+)""").find(resp)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+    
+    // CALCULA VELOCIDAD — guarda valores anteriores para restar
+    val prevRx = velocidadAnteriorRx
+    val prevTx = velocidadAnteriorTx
+    velocidadAnteriorRx = ether1Rx
+    velocidadAnteriorTx = ether1Tx
+    
+    if (prevRx > 0 && prevTx > 0) {
+        val deltaTiempo = 4.0 // segundos entre cada lectura
+        val bajadaBps = (ether1Rx - prevRx) * 8 / deltaTiempo
+        val subidaBps = (ether1Tx - prevTx) * 8 / deltaTiempo
+        
+        bajada = if (bajadaBps >= 1_000_000) "%.1f Mbps".format(bajadaBps / 1_000_000)
+                 else "%.0f KB/s".format(bajadaBps / 1_000)
+        subida = if (subidaBps >= 1_000_000) "%.1f Mbps".format(subidaBps / 1_000_000)
+                 else "%.0f KB/s".format(subidaBps / 1_000)
+    }
+}
+connIf.disconnect()
 
         // Clientes ARP con nombre
-        val urlArp = URL("http://${cfg.ip}:${cfg.puerto}/rest/ip/arp")
+        val urlArp = URL("http://${cfg.ip}:${cfg.puerto}/rest/ip/arp?interface=ether4&complete=true")
         val connArp = urlArp.openConnection() as HttpURLConnection
         connArp.setRequestProperty("Authorization", auth)
         connArp.connectTimeout = 4000

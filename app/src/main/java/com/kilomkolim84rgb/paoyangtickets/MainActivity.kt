@@ -222,7 +222,7 @@ object MikrotikAPI {
                     val ipCli = l["active-address"] ?: return@forEach
                     val macCli = l["active-mac-address"] ?: return@forEach
                     if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
-                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps ↓ / 0 bps ↑")
+                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps  / 0 bps ")
                     val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
                     val (bajadaVel, subidaVel) = separarVelocidad(velQ)
                     clientes.add(ClienteLAN(ipCli, macCli, nombreFinal, bajadaVel, subidaVel))

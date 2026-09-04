@@ -131,9 +131,9 @@ data class MikrotikEstado(
 
 data class Cliente(
     val ip: String,
-    val mac: String,
+    val velocidad: String,  // antes era MAC, ahora velocidad
     val nombre: String,
-    val interfaz: String
+    val limite: String
 )
 
 val _estadoMikrotik = MutableStateFlow(MikrotikEstado())
@@ -204,7 +204,7 @@ fun leerDatosMikrotik(cfg: MikrotikConfig.Config) {
         }
         connSys.disconnect()
 
-        // ✅ VELOCIDAD ETHER1 — SUBIDA / BAJADA EN TIEMPO REAL
+        /// ✅ VELOCIDAD DE LA INTERFAZ WAN — BUSCA CUALQUIER INTERFAZ ACTIVA
 val urlIf = URL("http://${cfg.ip}:${cfg.puerto}/rest/interface/print")
 val connIf = urlIf.openConnection() as HttpURLConnection
 connIf.setRequestProperty("Authorization", auth)
@@ -214,20 +214,34 @@ var subida = "— Mbps"
 var bajada = "— Mbps"
 if (connIf.responseCode == 200) {
     val resp = BufferedReader(InputStreamReader(connIf.inputStream)).readText()
-    // Busca ether1 — rx = bajada, tx = subida
-    val ether1Rx = Regex(""""name":"ether1"[^}]*"rx-byte":"?(\d+)""").find(resp)?.groupValues?.get(1)?.toLongOrNull() ?: 0
-    val ether1Tx = Regex(""""name":"ether1"[^}]*"tx-byte":"?(\d+)""").find(resp)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+    // Busca la interfaz ether1 o la que sea WAN
+    var rxBytes = 0L
+    var txBytes = 0L
+    // Busca TODAS las interfaces y toma ether1
+    val etherMatch = Regex(""""name":"ether1"[^}]*"rx-byte":"?(\d+)"[^}]*"tx-byte":"?(\d+)""").find(resp)
+    if (etherMatch != null) {
+        rxBytes = etherMatch.groupValues[1].toLongOrNull() ?: 0L
+        txBytes = etherMatch.groupValues[2].toLongOrNull() ?: 0L
+    } else {
+        // Si no se llama ether1, busca la primera que tenga tráfico
+        val allMatches = Regex(""""rx-byte":"?(\d+)"[^}]*"tx-byte":"?(\d+)""").findAll(resp)
+        for (m in allMatches) {
+            val r = m.groupValues[1].toLongOrNull() ?: 0L
+            val t = m.groupValues[2].toLongOrNull() ?: 0L
+            if (r > 0 || t > 0) { rxBytes = r; txBytes = t; break }
+        }
+    }
     
-    // CALCULA VELOCIDAD — guarda valores anteriores para restar
+    // CALCULA VELOCIDAD
     val prevRx = velocidadAnteriorRx
     val prevTx = velocidadAnteriorTx
-    velocidadAnteriorRx = ether1Rx
-    velocidadAnteriorTx = ether1Tx
+    velocidadAnteriorRx = rxBytes
+    velocidadAnteriorTx = txBytes
     
-    if (prevRx > 0 && prevTx > 0) {
-        val deltaTiempo = 4.0 // segundos entre cada lectura
-        val bajadaBps = (ether1Rx - prevRx) * 8 / deltaTiempo
-        val subidaBps = (ether1Tx - prevTx) * 8 / deltaTiempo
+    if (prevRx > 0 && prevTx > 0 && rxBytes >= prevRx && txBytes >= prevTx) {
+        val delta = 4.0
+        val bajadaBps = (rxBytes - prevRx) * 8 / delta
+        val subidaBps = (txBytes - prevTx) * 8 / delta
         
         bajada = if (bajadaBps >= 1_000_000) "%.1f Mbps".format(bajadaBps / 1_000_000)
                  else "%.0f KB/s".format(bajadaBps / 1_000)
@@ -237,28 +251,28 @@ if (connIf.responseCode == 200) {
 }
 connIf.disconnect()
 
-        // Clientes ARP con nombre
-        val urlArp = URL("http://${cfg.ip}:${cfg.puerto}/rest/ip/arp?interface=ether4&complete=true")
-        val connArp = urlArp.openConnection() as HttpURLConnection
-        connArp.setRequestProperty("Authorization", auth)
-        connArp.connectTimeout = 4000
-        connArp.readTimeout = 4000
-        val clientes = mutableListOf<Cliente>()
-        if (connArp.responseCode == 200) {
-            val resp = BufferedReader(InputStreamReader(connArp.inputStream)).readText()
-            val entradas = Regex("\\{[^}]+\\}").findAll(resp)
-            entradas.forEach { match ->
-                val txt = match.value
-                val ip = Regex(""""address":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
-                val mac = Regex(""""mac-address":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
-                val nombre = Regex(""""comment":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
-                val interfaz = Regex(""""interface":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
-                if (ip.isNotBlank() && mac.isNotBlank()) {
-                    clientes.add(Cliente(ip, mac, nombre, interfaz))
-                }
-            }
+        /// ✅ CLIENTES DESDE SIMPLE QUEUE — con velocidad y nombre
+val urlQueue = URL("http://${cfg.ip}:${cfg.puerto}/rest/queue/simple")
+val connQueue = urlQueue.openConnection() as HttpURLConnection
+connQueue.setRequestProperty("Authorization", auth)
+connQueue.connectTimeout = 4000
+connQueue.readTimeout = 4000
+val clientes = mutableListOf<Cliente>()
+if (connQueue.responseCode == 200) {
+    val resp = BufferedReader(InputStreamReader(connQueue.inputStream)).readText()
+    val entradas = Regex("\\{[^}]+\\}").findAll(resp)
+    entradas.forEach { match ->
+        val txt = match.value
+        val nombre = Regex(""""name":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
+        val ip = Regex(""""target":"([^"/]+)""").find(txt)?.groupValues?.get(1) ?: ""
+        val maxLimit = Regex(""""max-limit":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
+        val rate = Regex(""""rate":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
+        if (ip.isNotBlank() && nombre.isNotBlank() && !nombre.startsWith("__")) {
+            clientes.add(Cliente(ip, rate, nombre, maxLimit))
         }
-        connArp.disconnect()
+    }
+}
+connQueue.disconnect()
 
         _estadoMikrotik.value = MikrotikEstado(
             conectado = true, cpu = cpu, ram = ram, temp = temp,
@@ -438,11 +452,11 @@ fun PantallaPrincipal() {
                 if (estadoMikroTik.clientes.isEmpty()) Text("Configura el MikroTik para ver clientes", color = Color.Gray)
                 else Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 160.dp)) {
                     estadoMikroTik.clientes.forEach { c ->
-                        Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                            Column(Modifier.padding(8.dp)) {
-                                if (c.nombre.isNotBlank()) Text("👤 ${c.nombre}", fontWeight = FontWeight.Bold)
-                                Text("🌐 ${c.ip} | 📶 ${c.mac}", fontSize = 13.sp)
-                                Text("🔌 ${c.interfaz}", fontSize = 12.sp, color = Color.Gray)
+    Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Column(Modifier.padding(8.dp)) {
+            Text("👤 ${c.nombre}", fontWeight = FontWeight.Bold)
+            Text("🌐 ${c.ip} | 📈 ${c.velocidad}", fontSize = 13.sp)
+            Text("🔒 Límite: ${c.limite}", fontSize = 12.sp, color = Color.Gray)
                             }
                         }
                     }

@@ -52,8 +52,9 @@ class MainActivity : ComponentActivity() {
 val db = FirebaseDatabase.getInstance().reference
 val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 // Variables para calcular velocidad entre lecturas
-var velocidadAnteriorRx = 0L
-var velocidadAnteriorTx = 0L
+// BORRA ESTAS LÍNEAS — ya no se usan:
+// var velocidadAnteriorRx = 0L
+// var velocidadAnteriorTx = 0L
 
 data class Ticket(
     val codigo: String = "",
@@ -204,8 +205,8 @@ fun leerDatosMikrotik(cfg: MikrotikConfig.Config) {
         }
         connSys.disconnect()
 
-        /// ✅ VELOCIDAD DE LA INTERFAZ WAN — BUSCA CUALQUIER INTERFAZ ACTIVA
-val urlIf = URL("http://${cfg.ip}:${cfg.puerto}/rest/interface/print")
+        /// ✅ VELOCIDAD DE LA INTERFAZ WAN — LEE EL RATE DIRECTO (no calcula)
+val urlIf = URL("http://${cfg.ip}:${cfg.puerto}/rest/interface/print?stats")  // ← AGREGA ?stats
 val connIf = urlIf.openConnection() as HttpURLConnection
 connIf.setRequestProperty("Authorization", auth)
 connIf.connectTimeout = 4000
@@ -214,45 +215,28 @@ var subida = "— Mbps"
 var bajada = "— Mbps"
 if (connIf.responseCode == 200) {
     val resp = BufferedReader(InputStreamReader(connIf.inputStream)).readText()
-    // Busca la interfaz ether1 o la que sea WAN
-    var rxBytes = 0L
-    var txBytes = 0L
-    // Busca TODAS las interfaces y toma ether1
-    val etherMatch = Regex(""""name":"ether1"[^}]*"rx-byte":"?(\d+)"[^}]*"tx-byte":"?(\d+)""").find(resp)
+    // ✅ BUSCA ETHER1 Y LEE EL RATE DIRECTO (ya viene formateado)
+    // ✅ CORRECTO — busca ether1 y extrae rx-rate/tx-rate
+val etherMatch = Regex("\"name\":\"ether1\"[^\"]*\"rx-rate\":\"([^\"]+)\"[^\"]*\"tx-rate\":\"([^\"]+)\"").find(resp)
     if (etherMatch != null) {
-        rxBytes = etherMatch.groupValues[1].toLongOrNull() ?: 0L
-        txBytes = etherMatch.groupValues[2].toLongOrNull() ?: 0L
+        val rxRate = etherMatch.groupValues[1]  // ⬇️ Bajada — ya viene listo ej: "10M"
+        val txRate = etherMatch.groupValues[2]  // ⬆️ Subida — ya viene listo ej: "5M"
+        bajada = formatearVelocidad(rxRate)
+        subida = formatearVelocidad(txRate)
     } else {
-        // Si no se llama ether1, busca la primera que tenga tráfico
-        val allMatches = Regex(""""rx-byte":"?(\d+)"[^}]*"tx-byte":"?(\d+)""").findAll(resp)
-        for (m in allMatches) {
-            val r = m.groupValues[1].toLongOrNull() ?: 0L
-            val t = m.groupValues[2].toLongOrNull() ?: 0L
-            if (r > 0 || t > 0) { rxBytes = r; txBytes = t; break }
+        // Si no es ether1, busca la WAN por nombre
+        // ✅ CORRECTO — busca cualquier interfaz WAN
+val wanMatch = Regex("\"name\":\"(ether\\d+|wan|pppoe)[^\"]*\"rx-rate\":\"([^\"]+)\"[^\"]*\"tx-rate\":\"([^\"]+)\"").find(resp)
+        if (wanMatch != null) {
+            bajada = formatearVelocidad(wanMatch.groupValues[2])
+            subida = formatearVelocidad(wanMatch.groupValues[3])
         }
-    }
-    
-    // CALCULA VELOCIDAD
-    val prevRx = velocidadAnteriorRx
-    val prevTx = velocidadAnteriorTx
-    velocidadAnteriorRx = rxBytes
-    velocidadAnteriorTx = txBytes
-    
-    if (prevRx > 0 && prevTx > 0 && rxBytes >= prevRx && txBytes >= prevTx) {
-        val delta = 4.0
-        val bajadaBps = (rxBytes - prevRx) * 8 / delta
-        val subidaBps = (txBytes - prevTx) * 8 / delta
-        
-        bajada = if (bajadaBps >= 1_000_000) "%.1f Mbps".format(bajadaBps / 1_000_000)
-                 else "%.0f KB/s".format(bajadaBps / 1_000)
-        subida = if (subidaBps >= 1_000_000) "%.1f Mbps".format(subidaBps / 1_000_000)
-                 else "%.0f KB/s".format(subidaBps / 1_000)
     }
 }
 connIf.disconnect()
 
-        /// ✅ CLIENTES DESDE SIMPLE QUEUE — con velocidad y nombre
-val urlQueue = URL("http://${cfg.ip}:${cfg.puerto}/rest/queue/simple")
+        /// ✅ CLIENTES DESDE SIMPLE QUEUE — CON ?stats PARA QUE TRAIGA EL RATE
+val urlQueue = URL("http://${cfg.ip}:${cfg.puerto}/rest/queue/simple/print?stats")  // ← AGREGA ?stats OBLIGATORIO
 val connQueue = urlQueue.openConnection() as HttpURLConnection
 connQueue.setRequestProperty("Authorization", auth)
 connQueue.connectTimeout = 4000
@@ -266,9 +250,12 @@ if (connQueue.responseCode == 200) {
         val nombre = Regex(""""name":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
         val ip = Regex(""""target":"([^"/]+)""").find(txt)?.groupValues?.get(1) ?: ""
         val maxLimit = Regex(""""max-limit":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
-        val rate = Regex(""""rate":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: ""
-        if (ip.isNotBlank() && nombre.isNotBlank() && !nombre.startsWith("__")) {
-            clientes.add(Cliente(ip, rate, nombre, maxLimit))
+        // ✅ AHORA SÍ TRAE EL RATE porque pusimos ?stats
+        val rate = Regex(""""rate":"([^"]+)"""").find(txt)?.groupValues?.get(1) ?: "0/0"
+        
+        // ✅ MUESTRA TODOS, aunque tengan 0/0 — solo salta los internos
+        if (nombre.isNotBlank() && !nombre.startsWith("__")) {
+            clientes.add(Cliente(ip = ip, velocidad = rate, nombre = nombre, limite = maxLimit))
         }
     }
 }
@@ -535,3 +522,12 @@ fun PantallaPrincipal() {
 }
 
 fun formatearTiempo(seg: Int) = "%02d:%02d:%02d".format(seg / 3600, seg % 3600 / 60, seg % 60)
+// ✅ Convierte el formato del MikroTik a algo legible
+fun formatearVelocidad(raw: String): String {
+    return when {
+        raw.contains("G") -> "%.1f Gbps".format(raw.filter { it.isDigit() || it == '.' }.toFloatOrNull() ?: 0f)
+        raw.contains("M") -> "%.1f Mbps".format(raw.filter { it.isDigit() || it == '.' }.toFloatOrNull() ?: 0f)
+        raw.contains("k") -> "%.0f Kbps".format(raw.filter { it.isDigit() || it == '.' }.toFloatOrNull() ?: 0f)
+        else -> raw
+    }
+}

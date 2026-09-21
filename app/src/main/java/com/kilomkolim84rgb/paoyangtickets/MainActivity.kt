@@ -280,7 +280,7 @@ fun escucharTicketsFirebase() {
         override fun onDataChange(snapshot: DataSnapshot) {
             listaTickets.clear()
             snapshot.children.forEach nodoBucle@{ nodo ->
-                val codigo = nodo.child("codigo").getValue(String::class.java) 
+                val codigo = nodo.child("codigo").getValue(String::class.java)
                     ?: return@nodoBucle
                 if (codigo.length != 6 || !codigo.all { it.isDigit() }) {
                     return@nodoBucle

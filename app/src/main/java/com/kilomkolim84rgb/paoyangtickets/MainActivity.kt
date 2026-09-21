@@ -79,7 +79,7 @@ object MikrotikAPI {
     ): String? = withContext(Dispatchers.IO) {
         try {
             val cred = Base64.encodeToString("$usuario:$clave".toByteArray(), Base64.NO_WRAP)
-            val url = URL("http://$ip/$recurso")
+            val url = URL("http://$ip:80/$recurso")
             val conn = url.openConnection() as HttpURLConnection
             conn.apply {
                 requestMethod = "GET"

@@ -279,15 +279,22 @@ fun escucharTicketsFirebase() {
     db.child("historial").addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
             listaTickets.clear()
-            snapshot.children.forEach { nodo ->
-                val codigo = nodo.child("codigo").getValue(String::class.java) ?: return@forEach
-                if (codigo.length != 6 || !codigo.all { it.isDigit() }) return@forEach
+            snapshot.children.forEach nodoBucle@{ nodo ->
+                val codigo = nodo.child("codigo").getValue(String::class.java) 
+                    ?: return@nodoBucle
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) {
+                    return@nodoBucle
+                }
                 val monto = nodo.child("monto").getValue(Double::class.java) ?: 0.0
                 val tiempoMin = nodo.child("tiempo_minutos").getValue(Int::class.java) ?: 0
                 val mins = if (tiempoMin > 0) tiempoMin else (monto * 100).toInt()
                 listaTickets.add(Ticket(
-                    id = nodo.key ?: "", codigo = codigo, minutos = mins,
-                    fechaCreacion = "", estado = "CREADO", tiempoRestante = mins * 60
+                    id = nodo.key ?: "",
+                    codigo = codigo,
+                    minutos = mins,
+                    fechaCreacion = "",
+                    estado = "CREADO",
+                    tiempoRestante = mins * 60
                 ))
             }
             gestorTickets.guardar(listaTickets)
@@ -313,51 +320,94 @@ fun VentanaConfig(onCerrar: () -> Unit, alGuardar: () -> Unit) {
                 Text("⚙️ CONFIGURACIÓN — RB750Gr3", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
                 Spacer(Modifier.height(24.dp))
 
-                OutlinedTextField(value = ip, onValueChange = { ip = it }, label = { Text("IP del Router") },
-                    placeholder = { Text("192.168.50.1") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = ip,
+                    onValueChange = { ip = it },
+                    label = { Text("IP del Router") },
+                    placeholder = { Text("172.16.201.1") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(12.dp))
 
-                OutlinedTextField(value = usuario, onValueChange = { usuario = it }, label = { Text("Usuario") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = usuario,
+                    onValueChange = { usuario = it },
+                    label = { Text("Usuario") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(12.dp))
 
-                OutlinedTextField(value = clave, onValueChange = { clave = it }, label = { Text("Contraseña") },
-                    visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = clave,
+                    onValueChange = { clave = it },
+                    label = { Text("Contraseña") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(12.dp))
 
-                OutlinedTextField(value = dns, onValueChange = { dns = it }, label = { Text("DNS (opcional)") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = dns,
+                    onValueChange = { dns = it },
+                    label = { Text("DNS (opcional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(20.dp))
 
-                mensaje?.let { Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444)) }
+                mensaje?.let {
+                    Text(it, fontSize = 14.sp, color = if (it.startsWith("✅")) Color(0xFF22C55E) else Color(0xFFEF4444))
+                }
                 Spacer(Modifier.height(12.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = {
-                        if (ip.isBlank()) { mensaje = "❌ Escribe la IP"; return@Button }
-                        probando = true; mensaje = "🔄 Conectando..."
-                        CoroutineScope(Dispatchers.IO).launch {
-                            val ok = MikrotikAPI.probarConexion(ip, usuario, clave)
-                            with(Dispatchers.Main) {
-                                mensaje = if (ok) "✅ CONECTADO" else MikrotikAPI.ultimoError
-                                probando = false
+                    Button(
+                        onClick = {
+                            if (ip.isBlank()) {
+                                mensaje = "❌ Escribe la IP"
+                                return@Button
                             }
-                        }
-                    }, enabled = !probando, modifier = Modifier.weight(1f)) {
+                            probando = true
+                            mensaje = "🔄 Conectando..."
+                            CoroutineScope(Dispatchers.IO).launch {
+                                val ok = MikrotikAPI.probarConexion(ip, usuario, clave)
+                                withContext(Dispatchers.Main) {
+                                    mensaje = if (ok) "✅ CONECTADO" else MikrotikAPI.ultimoError
+                                    probando = false
+                                }
+                            }
+                        },
+                        enabled = !probando,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(if (probando) "⏳" else "🧪 PROBAR")
                     }
-                    Button(onClick = {
-                        if (ip.isBlank()) { mensaje = "❌ Escribe la IP"; return@Button }
-                        configMikrotik.guardar(MikrotikConfig.Config(ip, usuario, clave, dns))
-                        alGuardar()
-                        Toast.makeText(ctx, "✅ Guardado", Toast.LENGTH_SHORT).show()
-                        onCerrar()
-                    }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))) {
+                    Button(
+                        onClick = {
+                            if (ip.isBlank()) {
+                                mensaje = "❌ Escribe la IP"
+                                return@Button
+                            }
+                            configMikrotik.guardar(MikrotikConfig.Config(ip, usuario, clave, dns))
+                            alGuardar()
+                            Toast.makeText(ctx, "✅ Guardado", Toast.LENGTH_SHORT).show()
+                            onCerrar()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(Color(0xFF22C55E))
+                    ) {
                         Text("💾 GUARDAR")
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFF818CF8))) {
+                Button(
+                    onClick = onCerrar,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(Color(0xFF818CF8))
+                ) {
                     Text("CERRAR")
                 }
             }
@@ -367,13 +417,25 @@ fun VentanaConfig(onCerrar: () -> Unit, alGuardar: () -> Unit) {
 
 @Composable
 fun SeccionClientes(datos: DatosRouter) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(Color(0xFFF3E5F5))) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(Color(0xFFF3E5F5))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("💻 CLIENTES CONECTADOS", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
             Spacer(Modifier.height(12.dp))
             when {
-                !datos.conectado -> Text("⚠️ Configura la IP primero", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 14.sp)
-                datos.clientes.isEmpty() -> Text("📭 Sin clientes", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 14.sp)
+                !datos.conectado -> Text(
+                    "⚠️ Configura la IP primero",
+                    color = androidx.compose.ui.graphics.Color.Gray,
+                    fontSize = 14.sp
+                )
+                datos.clientes.isEmpty() -> Text(
+                    "📭 Sin clientes",
+                    color = androidx.compose.ui.graphics.Color.Gray,
+                    fontSize = 14.sp
+                )
                 else -> datos.clientes.forEach { cliente ->
                     Text("• ${cliente.ip} — ${cliente.mac}", fontSize = 13.sp)
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
@@ -386,31 +448,45 @@ fun SeccionClientes(datos: DatosRouter) {
 @Composable
 fun TarjetaTicket(ticket: Ticket) {
     val qr = remember(ticket.codigo) { generarCodigoQR(ticket.codigo) }
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(when(ticket.estado) {
-            "CREADO" -> Color(0xFFE3F2FD)
-            "ACTIVO" -> Color(0xFFE8F5E9)
-            "VENCIDO" -> Color(0xFFFFEBEE)
-            else -> Color(0xFFF5F5F5)
-        }), elevation = CardDefaults.cardElevation(2.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            when (ticket.estado) {
+                "CREADO" -> Color(0xFFE3F2FD)
+                "ACTIVO" -> Color(0xFFE8F5E9)
+                "VENCIDO" -> Color(0xFFFFEBEE)
+                else -> Color(0xFFF5F5F5)
+            }
+        ),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.foundation.Image(bitmap = qr.asImageBitmap(), contentDescription = "QR",
-                modifier = Modifier.size(100.dp).padding(end = 16.dp))
+            androidx.compose.foundation.Image(
+                bitmap = qr.asImageBitmap(),
+                contentDescription = "QR",
+                modifier = Modifier.size(100.dp).padding(end = 16.dp)
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text("CÓDIGO: ${ticket.codigo}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(4.dp))
                 Text("⏱️ Tiempo: ${ticket.minutos} min", fontSize = 14.sp)
-                Text(when(ticket.estado) {
-                    "CREADO" -> "🟡 CREADO"
-                    "ACTIVO" -> "🟢 ACTIVO — ${ticket.tiempoRestante/60} min restantes"
-                    "VENCIDO" -> "🔴 VENCIDO"
-                    else -> ticket.estado
-                }, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = when(ticket.estado) {
-                    "CREADO" -> Color(0xFFF57C00)
-                    "ACTIVO" -> Color(0xFF22C55E)
-                    "VENCIDO" -> Color(0xFFEF4444)
-                    else -> androidx.compose.ui.graphics.Color.Gray
-                })
+                Text(
+                    when (ticket.estado) {
+                        "CREADO" -> "🟡 CREADO"
+                        "ACTIVO" -> "🟢 ACTIVO — ${ticket.tiempoRestante/60} min restantes"
+                        "VENCIDO" -> "🔴 VENCIDO"
+                        else -> ticket.estado
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = when (ticket.estado) {
+                        "CREADO" -> Color(0xFFF57C00)
+                        "ACTIVO" -> Color(0xFF22C55E)
+                        "VENCIDO" -> Color(0xFFEF4444)
+                        else -> androidx.compose.ui.graphics.Color.Gray
+                    }
+                )
             }
         }
     }
@@ -432,7 +508,11 @@ fun VentanaTickets(titulo: String, filtro: String?, onCerrar: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onCerrar, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) {
+                Button(
+                    onClick = onCerrar,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
+                ) {
                     Text("CERRAR", fontSize = 16.sp)
                 }
             }
@@ -442,8 +522,12 @@ fun VentanaTickets(titulo: String, filtro: String?, onCerrar: () -> Unit) {
 
 @Composable
 fun BotonPestana(texto: String, color: Color, onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = Modifier.height(55.dp),
-        shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(color)) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.height(55.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(color)
+    ) {
         Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -481,30 +565,60 @@ fun PantallaPrincipal() {
     val vencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
     MaterialTheme {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .background(Color(0xFFF5F5F5)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .background(Color(0xFFF5F5F5))
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "🎟️ PAOYHAN TICKETS",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2C3E50),
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
 
-            Text("🎟️ PAOYHAN TICKETS", fontSize = 28.sp, fontWeight = FontWeight.Bold,
-                color = Color(0xFF2C3E50), modifier = Modifier.padding(vertical = 16.dp))
-
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(Color(0xFFFFF3E0))) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(Color(0xFFFFF3E0))
+            ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text("📡 RB750Gr3", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
                         IconButton(onClick = { abrirConfig = true }) {
-                            Icon(Icons.Default.Settings, "Config", tint = Color(0xFF6366F1), modifier = Modifier.size(28.dp))
+                            Icon(
+                                Icons.Default.Settings,
+                                "Config",
+                                tint = Color(0xFF6366F1),
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
                     }
                     Spacer(Modifier.height(16.dp))
 
                     if (cfg.ip.isBlank()) {
-                        Text("⚠️ Toca el ⚙️ para poner tu IP: 192.168.50.1", fontSize = 15.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                        Text(
+                            "⚠️ Toca el ⚙️ para poner tu IP: 172.16.201.1",
+                            fontSize = 15.sp,
+                            color = androidx.compose.ui.graphics.Color.Gray
+                        )
                     } else if (!datosRouter.conectado) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("🔄 Conectando a ${cfg.ip}...", fontSize = 15.sp, color = Color(0xFFE65100))
-                            if (cargando) CircularProgressIndicator(modifier = Modifier.size(18.dp).padding(start = 8.dp), strokeWidth = 2.dp)
+                            if (cargando) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp).padding(start = 8.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
                         }
                     } else {
                         Text("🌐 IP: ${cfg.ip}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
@@ -520,11 +634,21 @@ fun PantallaPrincipal() {
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("↓ BAJADA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
+                                Text(
+                                    datosRouter.bajadaEth1,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    color = Color(0xFF22C55E)
+                                )
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("↑ SUBIDA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
+                                Text(
+                                    datosRouter.subidaEth1,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    color = Color(0xFFFF6B00)
+                                )
                             }
                         }
                     }
@@ -535,8 +659,12 @@ fun PantallaPrincipal() {
             SeccionClientes(datos = datosRouter)
 
             Spacer(Modifier.height(24.dp))
-            Button(onClick = { abrirCreados = true }, modifier = Modifier.fillMaxWidth().height(70.dp),
-                shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))) {
+            Button(
+                onClick = { abrirCreados = true },
+                modifier = Modifier.fillMaxWidth().height(70.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(Color(0xFF6366F1))
+            ) {
                 Text("📋 TICKETS CREADOS ($creados)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
 

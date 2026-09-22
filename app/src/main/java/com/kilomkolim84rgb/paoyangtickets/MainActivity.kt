@@ -85,7 +85,7 @@ object MikrotikAPI {
         recurso: String
     ): String? = withContext(Dispatchers.IO) {
         try {
-            val url = "http://$ip:80$recurso"
+            val url = "http://$ip:80/webfig/$recurso"
             val conexion = URL(url).openConnection() as HttpURLConnection
             conexion.apply {
                 requestMethod = "GET"

@@ -135,83 +135,79 @@ object MikrotikAPI {
     }
 
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
-        ultimoError = ""
-        return withContext(Dispatchers.IO) {
-            var puertoUsado = 8080
-            var respuesta: String? = null
-            listOf(puerto, 8080, 80).forEach { p ->
-                respuesta = hacerPeticion(ip, p, usuario, clave, "/system/resource")
-                if (respuesta != null) { puertoUsado = p; return@forEach }
-            }
-            if (respuesta == null) return@withContext DatosRouter(conectado = false, error = ultimoError)
-
-            var cpu = 0; var ram = 0
-            try {
-                val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
-                map["cpu-load"]?.toIntOrNull()?.let { cpu = it }
-                map["free-memory"]?.toLongOrNull()?.let { libre ->
-                    val total = map["total-memory"]?.toLongOrNull() ?: 1
-                    ram = ((total - libre) * 100 / total).toInt()
-                }
-            } catch (e: Exception) {}
-
-            var bajadaEth1 = "— Kbps"
-            var subidaEth1 = "— Kbps"
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
-                val interfaces = parsearListaJson(respIf)
-                val eth1 = interfaces.find { it["name"] == "ether1" }
-                if (eth1 != null) {
-                    val rxBytes = eth1["rx-byte"]?.toLongOrNull() ?: 0L
-                    val txBytes = eth1["tx-byte"]?.toLongOrNull() ?: 0L
-                    val ahora = System.currentTimeMillis()
-                    val tiempo = ahora - ultimaMedicionEth1
-
-                    if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
-                        bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
-                        subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
-                    }
-                    ultimaRxEth1 = rxBytes
-                    ultimaTxEth1 = txBytes
-                    ultimaMedicionEth1 = ahora
-                }
-            }
-
-            val simpleQueue = mutableMapOf<String, Pair<String, String>>()
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
-                parsearListaJson(respQ).forEach { q ->
-                    val nombre = q["name"] ?: ""
-                    val target = q["target"] ?: ""
-                    val rateRaw = q["rate"] ?: ""
-                    val partes = rateRaw.trim().split("/")
-                    val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
-                    val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
-                    val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
-                    if (ipMatch != null && nombre.isNotEmpty()) {
-                        simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
-                    }
-                }
-            }
-
-
-            val clientes = mutableListOf<ClienteLAN>()
-            
-
-// ✅ SOLO DE QUEUE SIMPLE — SIN ARP, SIN DHCP
-simpleQueue.forEach { (ipCli, par) ->
-    val (nombre, velQ) = par
-    val (bajadaVel, subidaVel) = separarVelocidad(velQ)
-    clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
-}
-return@withContext DatosRouter(
-    conectado = true,
-    cpu = cpu,
-    ram = ram,
-    bajadaEth1 = bajadaEth1,
-    subidaEth1 = subidaEth1,
-    clientes = clientes.distinctBy { it.ip },
-)
+    ultimoError = ""
+    return withContext(Dispatchers.IO) {
+        var puertoUsado = 8080
+        var respuesta: String? = null
+        listOf(puerto, 8080, 80).forEach { p ->
+            respuesta = hacerPeticion(ip, p, usuario, clave, "/system/resource")
+            if (respuesta != null) { puertoUsado = p; return@forEach }
         }
+        if (respuesta == null) return@withContext DatosRouter(conectado = false, error = ultimoError)
+
+        var cpu = 0; var ram = 0
+        try {
+            val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
+            map["cpu-load"]?.toIntOrNull()?.let { cpu = it }
+            map["free-memory"]?.toLongOrNull()?.let { libre ->
+                val total = map["total-memory"]?.toLongOrNull() ?: 1
+                ram = ((total - libre) * 100 / total).toInt()
+            }
+        } catch (e: Exception) {}
+
+        var bajadaEth1 = "— Kbps"
+        var subidaEth1 = "— Kbps"
+        hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
+            val interfaces = parsearListaJson(respIf)
+            val eth1 = interfaces.find { it["name"] == "ether1" }
+            if (eth1 != null) {
+                val rxBytes = eth1["rx-byte"]?.toLongOrNull() ?: 0L
+                val txBytes = eth1["tx-byte"]?.toLongOrNull() ?: 0L
+                val ahora = System.currentTimeMillis()
+                val tiempo = ahora - ultimaMedicionEth1
+                if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
+                    bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
+                    subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
+                }
+                ultimaRxEth1 = rxBytes
+                ultimaTxEth1 = txBytes
+                ultimaMedicionEth1 = ahora
+            }
+        }
+
+        val simpleQueue = mutableMapOf<String, Pair<String, String>>()
+        hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
+            parsearListaJson(respQ).forEach { q ->
+                val nombre = q["name"] ?: ""
+                val target = q["target"] ?: ""
+                val rateRaw = q["rate"] ?: ""
+                val partes = rateRaw.trim().split("/")
+                val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
+                val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
+                val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
+                if (ipMatch != null && nombre.isNotEmpty()) {
+                    simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
+                }
+            }
+        }
+
+        val clientes = mutableListOf<ClienteLAN>()
+        simpleQueue.forEach { (ipCli, par) ->
+            val (nombre, velQ) = par
+            val (bajadaVel, subidaVel) = separarVelocidad(velQ)
+            clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
+        }
+
+        DatosRouter(
+            conectado = true,
+            cpu = cpu,
+            ram = ram,
+            bajadaEth1 = bajadaEth1,
+            subidaEth1 = subidaEth1,
+            clientes = clientes.distinctBy { it.ip }
+        )
     }
+}
 
     private fun formatearTasa(bitsPorSegundo: Long): String {
         return when {

@@ -201,16 +201,14 @@ simpleQueue.forEach { (ipCli, par) ->
     val (nombre, velQ) = par
     val (bajadaVel, subidaVel) = separarVelocidad(velQ)
     clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
-    ipsAgregadas.add(ipCli)
 }
-return@withContext
-DatosRouter(
+return@withContext DatosRouter(
     conectado = true,
     cpu = cpu,
     ram = ram,
     bajadaEth1 = bajadaEth1,
     subidaEth1 = subidaEth1,
-    clientes = clientes.distinctBy { it.ip }
+    clientes = clientes.distinctBy { it.ip },
 )
         }
     }

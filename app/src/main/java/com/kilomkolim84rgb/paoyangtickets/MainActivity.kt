@@ -85,7 +85,7 @@ object MikrotikAPI {
         recurso: String
     ): String? = withContext(Dispatchers.IO) {
         try {
-            val url = "http://$ip:80/webfig/$recurso"
+            val url = "http://$ip:$puerto/rest$recurso"
             val conexion = URL(url).openConnection() as HttpURLConnection
             conexion.apply {
                 requestMethod = "GET"
@@ -176,7 +176,8 @@ object MikrotikAPI {
                 }
             }
 
-            val simpleQueue = mutableMapOf<String, Pair<String, String>>()
+            // === SOLO QUEUE SIMPLE — SIN ARP, SIN DHCP ===
+            val simpleQueue = mutableListOf<ClienteLAN>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
                     val nombre = q["name"] ?: ""
@@ -187,16 +188,9 @@ object MikrotikAPI {
                     val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
                     if (ipMatch != null && nombre.isNotEmpty()) {
-                        simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
+                        simpleQueue.add(ClienteLAN(ipMatch, "", nombre, bajada, subida))
                     }
                 }
-            }
-
-            val clientes = mutableListOf<ClienteLAN>()
-            simpleQueue.forEach { (ipCli, par) ->
-                val (nombre, velQ) = par
-                val (bajadaVel, subidaVel) = separarVelocidad(velQ)
-                clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
             }
 
             DatosRouter(
@@ -205,7 +199,7 @@ object MikrotikAPI {
                 ram = ram,
                 bajadaEth1 = bajadaEth1,
                 subidaEth1 = subidaEth1,
-                clientes = clientes.distinctBy { it.ip }
+                clientes = simpleQueue.distinctBy { it.ip }
             )
         }
     }
@@ -217,11 +211,6 @@ object MikrotikAPI {
             bitsPorSegundo > 0 -> "$bitsPorSegundo bps"
             else -> "0 bps"
         }
-    }
-
-    private fun separarVelocidad(texto: String): Pair<String, String> {
-        val partes = texto.split(" ↓ / ", " ↑")
-        return if (partes.size >= 2) Pair(partes[0], partes[1]) else Pair("0 bps", "0 bps")
     }
 
     private fun parsearJsonSimple(json: String): Map<String, String> {
@@ -629,7 +618,7 @@ fun BotonPestana(texto: String, colorFondo: Color, modifier: Modifier = Modifier
     ) { Text(texto, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
-// ============== PANTALLA PRINCIPAL — TODO INTEGRADO ==============
+// ============== PANTALLA PRINCIPAL ==============
 @Composable
 fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }

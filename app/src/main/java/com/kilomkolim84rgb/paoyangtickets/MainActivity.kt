@@ -192,52 +192,26 @@ object MikrotikAPI {
                 }
             }
 
-            val arpNombres = mutableMapOf<String, String>()
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
-                parsearListaJson(respArp).forEach { a ->
-                    val ipCli = a["address"] ?: return@forEach
-                    val comentario = a["comment"] ?: ""
-                    if (comentario.isNotEmpty()) arpNombres[ipCli] = comentario
-                }
-            }
 
             val clientes = mutableListOf<ClienteLAN>()
-            val ipsAgregadas = mutableSetOf<String>()
+            
 
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/arp")?.let { respArp ->
-                parsearListaJson(respArp).forEach { a ->
-                    val ipCli = a["address"] ?: return@forEach
-                    val macCli = a["mac-address"] ?: return@forEach
-                    if (ipCli.isEmpty() || macCli.isEmpty()) return@forEach
-                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps ↓ / 0 bps ↑")
-                    val nombreFinal = nombreQ.ifBlank { arpNombres[ipCli] ?: "" }
-                    val (bajadaVel, subidaVel) = separarVelocidad(velQ)
-                    clientes.add(ClienteLAN(ipCli, macCli, nombreFinal, bajadaVel, subidaVel))
-                    ipsAgregadas.add(ipCli)
-                }
-            }
-
-            hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/dhcp-server/lease")?.let { respDhcp ->
-                parsearListaJson(respDhcp).forEach { l ->
-                    val ipCli = l["active-address"] ?: return@forEach
-                    val macCli = l["active-mac-address"] ?: return@forEach
-                    if (ipCli.isEmpty() || macCli.isEmpty() || ipsAgregadas.contains(ipCli)) return@forEach
-                    val (nombreQ, velQ) = simpleQueue[ipCli] ?: Pair("", "0 bps  / 0 bps ")
-                    val nombreFinal = nombreQ.ifBlank { l["comment"] ?: l["host-name"] ?: "" }
-                    val (bajadaVel, subidaVel) = separarVelocidad(velQ)
-                    clientes.add(ClienteLAN(ipCli, macCli, nombreFinal, bajadaVel, subidaVel))
-                    ipsAgregadas.add(ipCli)
-                }
-            }
-
-            DatosRouter(
-                conectado = true,
-                cpu = cpu,
-                ram = ram,
-                bajadaEth1 = bajadaEth1,
-                subidaEth1 = subidaEth1,
-                clientes = clientes.distinctBy { it.ip }
-            )
+// ✅ SOLO DE QUEUE SIMPLE — SIN ARP, SIN DHCP
+simpleQueue.forEach { (ipCli, par) ->
+    val (nombre, velQ) = par
+    val (bajadaVel, subidaVel) = separarVelocidad(velQ)
+    clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
+    ipsAgregadas.add(ipCli)
+}
+return@withContext
+DatosRouter(
+    conectado = true,
+    cpu = cpu,
+    ram = ram,
+    bajadaEth1 = bajadaEth1,
+    subidaEth1 = subidaEth1,
+    clientes = clientes.distinctBy { it.ip }
+)
         }
     }
 

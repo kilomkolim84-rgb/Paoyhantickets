@@ -167,6 +167,7 @@ object MikrotikAPI {
                     val tiempo = ahora - ultimaMedicionEth1
 
                     if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
+                        // ✅ RX = BAJADA | TX = SUBIDA
                         bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
                         subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
                     }
@@ -184,6 +185,7 @@ object MikrotikAPI {
                     val target = q["target"] ?: ""
                     val rateRaw = q["rate"] ?: ""
                     val partes = rateRaw.trim().split("/")
+                    // ✅ CORREGIDO: Bajada = primera parte / Subida = segunda parte
                     val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
                     val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
@@ -498,13 +500,21 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(c.ip, fontSize = 12.sp, modifier = Modifier.weight(0.28f))
                         Text(c.nombre.ifBlank { "—" }, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(0.28f))
-                        Text(
-                            "${c.velocidadBajada} ↓ / ${c.velocidadSubida} ↑",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFD32F2F),
-                            modifier = Modifier.weight(0.44f)
-                        )
+                        Row(modifier = Modifier.weight(0.44f), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            Text(
+                                "${c.velocidadBajada} ↓",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF22C55E) // 🟢 VERDE = BAJADA
+                            )
+                            Text(" / ", fontSize = 12.sp, color = androidx.compose.ui.graphics.Color.Gray)
+                            Text(
+                                "${c.velocidadSubida} ↑",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFEF4444) // 🔴 ROJO = SUBIDA
+                            )
+                        }
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = androidx.compose.ui.graphics.Color(0xFFE0E0E0))
                 }
@@ -718,11 +728,11 @@ fun PantallaPrincipal() {
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("↓ BAJADA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
+                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E)) // 🟢 VERDE
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("↑ SUBIDA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF6B00))
+                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFEF4444)) // 🔴 ROJO
                             }
                         }
                     }

@@ -135,79 +135,80 @@ object MikrotikAPI {
     }
 
     suspend fun obtenerTodo(ip: String, puerto: Int, usuario: String, clave: String): DatosRouter {
-    ultimoError = ""
-    return withContext(Dispatchers.IO) {
-        var puertoUsado = 8080
-        var respuesta: String? = null
-        listOf(puerto, 8080, 80).forEach { p ->
-            respuesta = hacerPeticion(ip, p, usuario, clave, "/system/resource")
-            if (respuesta != null) { puertoUsado = p; return@forEach }
-        }
-        if (respuesta == null) return@withContext DatosRouter(conectado = false, error = ultimoError)
-
-        var cpu = 0; var ram = 0
-        try {
-            val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
-            map["cpu-load"]?.toIntOrNull()?.let { cpu = it }
-            map["free-memory"]?.toLongOrNull()?.let { libre ->
-                val total = map["total-memory"]?.toLongOrNull() ?: 1
-                ram = ((total - libre) * 100 / total).toInt()
+        ultimoError = ""
+        return withContext(Dispatchers.IO) {
+            var puertoUsado = 8080
+            var respuesta: String? = null
+            listOf(puerto, 8080, 80).forEach { p ->
+                respuesta = hacerPeticion(ip, p, usuario, clave, "/system/resource")
+                if (respuesta != null) { puertoUsado = p; return@forEach }
             }
-        } catch (e: Exception) {}
+            if (respuesta == null) return@withContext DatosRouter(conectado = false, error = ultimoError)
 
-        var bajadaEth1 = "— Kbps"
-        var subidaEth1 = "— Kbps"
-        hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
-            val interfaces = parsearListaJson(respIf)
-            val eth1 = interfaces.find { it["name"] == "ether1" }
-            if (eth1 != null) {
-                val rxBytes = eth1["rx-byte"]?.toLongOrNull() ?: 0L
-                val txBytes = eth1["tx-byte"]?.toLongOrNull() ?: 0L
-                val ahora = System.currentTimeMillis()
-                val tiempo = ahora - ultimaMedicionEth1
-                if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
-                    bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
-                    subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
+            var cpu = 0; var ram = 0
+            try {
+                val map = parsearJsonSimple(respuesta!!.trim().removeSurrounding("[", "]"))
+                map["cpu-load"]?.toIntOrNull()?.let { cpu = it }
+                map["free-memory"]?.toLongOrNull()?.let { libre ->
+                    val total = map["total-memory"]?.toLongOrNull() ?: 1
+                    ram = ((total - libre) * 100 / total).toInt()
                 }
-                ultimaRxEth1 = rxBytes
-                ultimaTxEth1 = txBytes
-                ultimaMedicionEth1 = ahora
-            }
-        }
+            } catch (e: Exception) {}
 
-        val simpleQueue = mutableMapOf<String, Pair<String, String>>()
-        hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
-            parsearListaJson(respQ).forEach { q ->
-                val nombre = q["name"] ?: ""
-                val target = q["target"] ?: ""
-                val rateRaw = q["rate"] ?: ""
-                val partes = rateRaw.trim().split("/")
-                val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
-                val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
-                val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
-                if (ipMatch != null && nombre.isNotEmpty()) {
-                    simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
+            var bajadaEth1 = "— Kbps"
+            var subidaEth1 = "— Kbps"
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
+                val interfaces = parsearListaJson(respIf)
+                val eth1 = interfaces.find { it["name"] == "ether1" }
+                if (eth1 != null) {
+                    val rxBytes = eth1["rx-byte"]?.toLongOrNull() ?: 0L
+                    val txBytes = eth1["tx-byte"]?.toLongOrNull() ?: 0L
+                    val ahora = System.currentTimeMillis()
+                    val tiempo = ahora - ultimaMedicionEth1
+
+                    if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
+                        bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
+                        subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
+                    }
+                    ultimaRxEth1 = rxBytes
+                    ultimaTxEth1 = txBytes
+                    ultimaMedicionEth1 = ahora
                 }
             }
-        }
 
-        val clientes = mutableListOf<ClienteLAN>()
-        simpleQueue.forEach { (ipCli, par) ->
-            val (nombre, velQ) = par
-            val (bajadaVel, subidaVel) = separarVelocidad(velQ)
-            clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
-        }
+            val simpleQueue = mutableMapOf<String, Pair<String, String>>()
+            hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
+                parsearListaJson(respQ).forEach { q ->
+                    val nombre = q["name"] ?: ""
+                    val target = q["target"] ?: ""
+                    val rateRaw = q["rate"] ?: ""
+                    val partes = rateRaw.trim().split("/")
+                    val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
+                    val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
+                    val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
+                    if (ipMatch != null && nombre.isNotEmpty()) {
+                        simpleQueue[ipMatch] = Pair(nombre, "$bajada ↓ / $subida ↑")
+                    }
+                }
+            }
 
-        DatosRouter(
-            conectado = true,
-            cpu = cpu,
-            ram = ram,
-            bajadaEth1 = bajadaEth1,
-            subidaEth1 = subidaEth1,
-            clientes = clientes.distinctBy { it.ip }
-        )
+            val clientes = mutableListOf<ClienteLAN>()
+            simpleQueue.forEach { (ipCli, par) ->
+                val (nombre, velQ) = par
+                val (bajadaVel, subidaVel) = separarVelocidad(velQ)
+                clientes.add(ClienteLAN(ipCli, "", nombre, bajadaVel, subidaVel))
+            }
+
+            DatosRouter(
+                conectado = true,
+                cpu = cpu,
+                ram = ram,
+                bajadaEth1 = bajadaEth1,
+                subidaEth1 = subidaEth1,
+                clientes = clientes.distinctBy { it.ip }
+            )
+        }
     }
-}
 
     private fun formatearTasa(bitsPorSegundo: Long): String {
         return when {
@@ -349,32 +350,32 @@ fun generarCodigoQR(texto: String, tamano: Int = 300): Bitmap {
 fun escucharTicketsFirebase() {
     db.child("historial").addValueEventListener(object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-    listaTickets.clear()
-    for (nodo in snapshot.children) {
-        val codigo = nodo.child("codigo").getValue(String::class.java) ?: continue
-        val montoD = nodo.child("monto").getValue(Double::class.java) ?: 0.0
-        val tiempoMin = nodo.child("tiempo_minutos").getValue(Int::class.java) ?: 0
-        val fecha = nodo.child("fechaCreacion").getValue(String::class.java) ?: ""
-        val leido = nodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
+            listaTickets.clear()
+            for (nodo in snapshot.children) {
+                val codigo = nodo.child("codigo").getValue(String::class.java) ?: continue
+                val montoD = nodo.child("monto").getValue(Double::class.java) ?: 0.0
+                val tiempoMin = nodo.child("tiempo_minutos").getValue(Int::class.java) ?: 0
+                val fecha = nodo.child("fechaCreacion").getValue(String::class.java) ?: ""
+                val leido = nodo.child("leido_por_portal").getValue(Boolean::class.java) ?: false
 
-        if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) continue
 
-        val mins = if (tiempoMin > 0) tiempoMin else (montoD * 100).toInt()
-        val h = mins / 60
-        val m = mins % 60
-        val tiempoStr = if (h > 0) "${h}h ${m}m" else "${mins}m"
-        
-        listaTickets.add(Ticket(
-            id = nodo.key ?: "",
-            codigo = codigo,
-            minutos = mins,
-            fechaCreacion = fecha,
-            estado = if (leido) "ACTIVO" else "CREADO",
-            tiempoRestante = mins * 60
-        ))
-    }
-    gestorTickets.guardar(listaTickets)
-}
+                val mins = if (tiempoMin > 0) tiempoMin else (montoD * 100).toInt()
+                val h = mins / 60
+                val m = mins % 60
+                val tiempoStr = if (h > 0) "${h}h ${m}m" else "${mins}m"
+                
+                listaTickets.add(Ticket(
+                    id = nodo.key ?: "",
+                    codigo = codigo,
+                    minutos = mins,
+                    fechaCreacion = fecha,
+                    estado = if (leido) "ACTIVO" else "CREADO",
+                    tiempoRestante = mins * 60
+                ))
+            }
+            gestorTickets.guardar(listaTickets)
+        }
 
         override fun onCancelled(error: DatabaseError) {
             println("⚠️ Firebase: ${error.message}")
@@ -641,7 +642,6 @@ fun PantallaPrincipal() {
 
     val config = remember(reiniciarConexion) { configMikrotik.cargar() }
 
-    // Escuchar Firebase en tiempo real
     LaunchedEffect(Unit) {
         escucharTicketsFirebase()
     }

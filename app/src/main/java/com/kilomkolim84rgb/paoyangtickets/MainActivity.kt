@@ -159,7 +159,7 @@ object MikrotikAPI {
             var subidaEth1 = "— Kbps"
             hacerPeticion(ip, puertoUsado, usuario, clave, "/interface")?.let { respIf ->
                 val interfaces = parsearListaJson(respIf)
-                val eth1 = interfaces.find { it["name"] == "ether1" }
+                val eth1 = interfaces.find { it["name"] == "WAN1" }
                 if (eth1 != null) {
                     val rxBytes = eth1["rx-byte"]?.toLongOrNull() ?: 0L
                     val txBytes = eth1["tx-byte"]?.toLongOrNull() ?: 0L

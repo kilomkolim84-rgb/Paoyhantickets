@@ -50,6 +50,12 @@ class MainActivity : ComponentActivity() {
 
 val db = FirebaseDatabase.getInstance().reference
 
+// ✅ FUNCIÓN AUXILIAR: Formatea correctamente IPv4 e IPv6
+private fun formatearHost(ip: String): String {
+    val limpio = ip.trim().removePrefix("[").removeSuffix("]")
+    return if (limpio.contains(":")) "[$limpio]" else limpio
+}
+
 // ==============================================
 // 📊 DATOS DEL ROUTER
 // ==============================================
@@ -85,7 +91,8 @@ object MikrotikAPI {
         recurso: String
     ): String? = withContext(Dispatchers.IO) {
         try {
-            val url = "http://$ip:$puerto/rest$recurso"
+            val host = formatearHost(ip)
+            val url = "http://$host:$puerto/rest$recurso"
             val conexion = URL(url).openConnection() as HttpURLConnection
             conexion.apply {
                 requestMethod = "GET"
@@ -167,7 +174,6 @@ object MikrotikAPI {
                     val tiempo = ahora - ultimaMedicionEth1
 
                     if (ultimaMedicionEth1 > 0L && tiempo > 0L) {
-                        // ✅ RX = BAJADA | TX = SUBIDA
                         subidaEth1 = calcularVelocidad(txBytes, ultimaTxEth1, tiempo)
                         bajadaEth1 = calcularVelocidad(rxBytes, ultimaRxEth1, tiempo)
                     }
@@ -177,7 +183,6 @@ object MikrotikAPI {
                 }
             }
 
-            // === SOLO QUEUE SIMPLE — SIN ARP, SIN DHCP ===
             val simpleQueue = mutableListOf<ClienteLAN>()
             hacerPeticion(ip, puertoUsado, usuario, clave, "/queue/simple")?.let { respQ ->
                 parsearListaJson(respQ).forEach { q ->
@@ -185,7 +190,6 @@ object MikrotikAPI {
                     val target = q["target"] ?: ""
                     val rateRaw = q["rate"] ?: ""
                     val partes = rateRaw.trim().split("/")
-                    // ✅ CORREGIDO: Bajada = primera parte / Subida = segunda parte
                     val bajada = if (partes.size >= 1 && partes[0] != "0") formatearTasa(partes[0].toLongOrNull() ?: 0L) else "0 bps"
                     val subida = if (partes.size >= 2 && partes[1] != "0") formatearTasa(partes[1].toLongOrNull() ?: 0L) else "0 bps"
                     val ipMatch = Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(target)?.groupValues?.get(1)
@@ -398,7 +402,7 @@ fun VentanaConfig(onCerrar: () -> Unit, alGuardar: () -> Unit) {
                     label = { Text("IP / Dominio") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("172.16.201.1 o 172.16.1.1") }
+                    placeholder = { Text("192.168.88.1 o IPv6") }
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -505,14 +509,14 @@ fun SeccionClientesLAN(datosRouter: DatosRouter) {
                                 "${c.velocidadBajada} ↓",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF22C55E) // 🟢 VERDE = BAJADA
+                                color = Color(0xFF22C55E)
                             )
                             Text(" / ", fontSize = 12.sp, color = androidx.compose.ui.graphics.Color.Gray)
                             Text(
                                 "${c.velocidadSubida} ↑",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFEF4444) // 🔴 ROJO = SUBIDA
+                                color = Color(0xFFEF4444)
                             )
                         }
                     }
@@ -668,7 +672,6 @@ fun PantallaPrincipal() {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .background(Color(0xFFF5F5F5))
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -728,11 +731,11 @@ fun PantallaPrincipal() {
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("↓ BAJADA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E)) // 🟢 VERDE
+                                Text(datosRouter.bajadaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF22C55E))
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("↑ SUBIDA", fontSize = 13.sp, color = androidx.compose.ui.graphics.Color.Gray)
-                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFEF4444)) // 🔴 ROJO
+                                Text(datosRouter.subidaEth1, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFEF4444))
                             }
                         }
                     }

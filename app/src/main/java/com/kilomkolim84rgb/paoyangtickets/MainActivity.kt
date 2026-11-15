@@ -198,6 +198,28 @@ object MikrotikAPI {
                     }
                 }
             }
+val listaHotspotUser = mutableListOf<Ticket>()
+hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/hotspot/user")?.let { respHu ->
+    parsearListaJson(respHu).forEach { hu ->
+        val codigoTicket = hu["name"] ?: ""
+        val fechaCreacion = hu["comment"] ?: ""
+        listaHotspotUser.add(Ticket(codigo = codigoTicket, fechaCreacion = fechaCreacion, estado = "CREADO"))
+    }
+}
+
+val listaHotspotActive = mutableListOf<Ticket>()
+hacerPeticion(ip, puertoUsado, usuario, clave, "/ip/hotspot/active")?.let { respHa ->
+    parsearListaJson(respHa).forEach { ha ->
+        val codigoTicket = ha["user"] ?: ""
+        val ipUsuario = ha["address"] ?: ""
+        val macUsuario = ha["mac-address"] ?: ""
+        listaHotspotActive.add(Ticket(codigo = codigoTicket, ipUsuario = ipUsuario, macUsuario = macUsuario, estado = "ACTIVO"))
+    }
+}
+
+listaTickets.clear()
+listaTickets.addAll(listaHotspotUser)
+listaTickets.addAll(listaHotspotActive)
 
             DatosRouter(
                 conectado = true,
@@ -638,16 +660,12 @@ fun PantallaPrincipal() {
     var abrirConfig by remember { mutableStateOf(false) }
     var abrirCreados by remember { mutableStateOf(false) }
     var abrirActivos by remember { mutableStateOf(false) }
-    var abrirVencidos by remember { mutableStateOf(false) }
     var datosRouter by remember { mutableStateOf(DatosRouter()) }
     var cargando by remember { mutableStateOf(false) }
     var reiniciarConexion by remember { mutableStateOf(false) }
 
     val config = remember(reiniciarConexion) { configMikrotik.cargar() }
 
-    LaunchedEffect(Unit) {
-        escucharTicketsFirebase()
-    }
 
     val cargarDatos = suspend {
         cargando = true
@@ -665,7 +683,6 @@ fun PantallaPrincipal() {
 
     val creados by remember { derivedStateOf { listaTickets.count { it.estado == "CREADO" } } }
     val activos by remember { derivedStateOf { listaTickets.count { it.estado == "ACTIVO" } } }
-    val vencidos by remember { derivedStateOf { listaTickets.count { it.estado == "VENCIDO" } } }
 
     MaterialTheme {
         Column(
@@ -756,10 +773,7 @@ fun PantallaPrincipal() {
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BotonPestana("🟢 ACTIVOS ($activos)", Color(0xFF22C55E), Modifier.weight(1f)) { abrirActivos = true }
-                BotonPestana("🔴 VENCIDOS ($vencidos)", Color(0xFFEF4444), Modifier.weight(1f)) { abrirVencidos = true }
-            }
+            BotonPestana("🟢 ACTIVOS ($activos)", Color(0xFF22C55E), Modifier.fillMaxWidth()) { abrirActivos = true }
 
             Spacer(modifier = Modifier.height(40.dp))
         }
@@ -770,6 +784,5 @@ fun PantallaPrincipal() {
         )
         if (abrirCreados) VentanaTickets("📋 TICKETS CREADOS", "CREADO") { abrirCreados = false }
         if (abrirActivos) VentanaTickets("🟢 TICKETS ACTIVOS", "ACTIVO") { abrirActivos = false }
-        if (abrirVencidos) VentanaTickets("🔴 TICKETS VENCIDOS", "VENCIDO") { abrirVencidos = false }
     }
 }
